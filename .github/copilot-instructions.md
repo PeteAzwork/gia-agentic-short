@@ -2,12 +2,15 @@
 
 ## Architecture
 
-- **Claude Sonnet 4** as primary model (claude-sonnet-4-20250514)
+- **Claude Opus 4.5** as primary model (claude-sonnet-4-5-20250929)
+
+
+
 
 ## Agent Model Configuration
 | Agent Type | Recommended Model |
 |------------|------------------|
-| All Tasks | `claude-sonnet-4-20250514` (Claude Sonnet 4 via Anthropic) |
+| All Tasks | `claude-sonnet-4-5-20250929` (Claude Opus 4.5 via Anthropic) |
 | Fallback | GitHub Models via `openai/gpt-4.1-mini` |
 
 ## Critical Rules for All Agents
@@ -46,7 +49,7 @@ results-driven, machine-first, paradigm-shifting, novel, unique, utilize, impact
 - Always update README
 - Always commit and push a version to https://github.com/giatenica/gia-agentic-short as giatenica
 - Git config: user.name=giatenica, user.email=me@giatenica.com
-- Always gitignore docs folder but NOT .github (workflows needed)
+- Always gitignore docs folder and .github 
 - Always maintain a clear and clean file structure, remove redundant and temporary files and code if not needed anymore
 - The Author of all academic Writing is always Gia Tenica (me@giatenica.com)
 - Use an Asterisks (*) after her name with the info in the footnote Gia Tenica is an anagram for Agentic AI. Gia is a fully autonomous AI researcher, for more information see: https://giatenica.com

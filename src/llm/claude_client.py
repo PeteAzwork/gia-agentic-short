@@ -1,11 +1,18 @@
 """
-Claude API Client with Batch Processing and Prompt Caching
-==========================================================
+Claude API Client with Multi-Model Support, Batch Processing and Prompt Caching
+================================================================================
 Provides optimized Claude API access with:
-- Prompt caching for repeated context
-- Batch processing for multiple requests
-- Extended thinking support
-- Token usage tracking
+- Multi-model support (Opus 4.5, Sonnet 4.5, Haiku 4.5)
+- Task-based automatic model selection
+- Prompt caching for repeated context (5-min and 1-hour TTL)
+- Batch processing for multiple requests (50% cost savings)
+- Extended thinking with interleaved thinking support
+- Token usage tracking and cost estimation
+
+Model Selection Guide:
+- Opus 4.5: Complex reasoning, scientific analysis, academic writing
+- Sonnet 4.5: Coding, agents, data analysis, general tasks
+- Haiku 4.5: Classification, summarization, high-volume tasks
 
 Author: Gia Tenica*
 *Gia Tenica is an anagram for Agentic AI. Gia is a fully autonomous AI researcher,
@@ -13,8 +20,9 @@ for more information see: https://giatenica.com
 """
 
 import os
-from typing import Optional
+from typing import Optional, Literal, Union
 from dataclasses import dataclass
+from enum import Enum
 
 import anthropic
 from dotenv import load_dotenv
@@ -24,6 +32,114 @@ from loguru import logger
 load_dotenv()
 
 
+class ModelTier(Enum):
+    """Model tiers for task-based selection."""
+    OPUS = "opus"       # Premium: Maximum intelligence, complex reasoning
+    SONNET = "sonnet"   # Balanced: Complex agents, coding, general tasks
+    HAIKU = "haiku"     # Fast: High-volume, low-latency tasks
+
+
+class TaskType(Enum):
+    """Task types for automatic model selection."""
+    # Opus 4.5 tasks (maximum intelligence)
+    COMPLEX_REASONING = "complex_reasoning"
+    SCIENTIFIC_ANALYSIS = "scientific_analysis"
+    ACADEMIC_WRITING = "academic_writing"
+    MULTI_STEP_RESEARCH = "multi_step_research"
+    
+    # Sonnet 4.5 tasks (balanced performance)
+    CODING = "coding"
+    AGENTIC_WORKFLOW = "agentic_workflow"
+    DATA_ANALYSIS = "data_analysis"
+    GENERAL_CHAT = "general_chat"
+    DOCUMENT_CREATION = "document_creation"
+    
+    # Haiku 4.5 tasks (speed-optimized)
+    CLASSIFICATION = "classification"
+    SUMMARIZATION = "summarization"
+    DATA_EXTRACTION = "data_extraction"
+    QUICK_RESPONSE = "quick_response"
+    HIGH_VOLUME = "high_volume"
+
+
+# Task to model mapping
+TASK_MODEL_MAP = {
+    # Opus 4.5: Premium intelligence tasks
+    TaskType.COMPLEX_REASONING: ModelTier.OPUS,
+    TaskType.SCIENTIFIC_ANALYSIS: ModelTier.OPUS,
+    TaskType.ACADEMIC_WRITING: ModelTier.OPUS,
+    TaskType.MULTI_STEP_RESEARCH: ModelTier.OPUS,
+    
+    # Sonnet 4.5: Balanced tasks
+    TaskType.CODING: ModelTier.SONNET,
+    TaskType.AGENTIC_WORKFLOW: ModelTier.SONNET,
+    TaskType.DATA_ANALYSIS: ModelTier.SONNET,
+    TaskType.GENERAL_CHAT: ModelTier.SONNET,
+    TaskType.DOCUMENT_CREATION: ModelTier.SONNET,
+    
+    # Haiku 4.5: Speed-optimized tasks
+    TaskType.CLASSIFICATION: ModelTier.HAIKU,
+    TaskType.SUMMARIZATION: ModelTier.HAIKU,
+    TaskType.DATA_EXTRACTION: ModelTier.HAIKU,
+    TaskType.QUICK_RESPONSE: ModelTier.HAIKU,
+    TaskType.HIGH_VOLUME: ModelTier.HAIKU,
+}
+
+
+@dataclass
+class ModelInfo:
+    """Information about a Claude model."""
+    id: str
+    alias: str
+    tier: ModelTier
+    description: str
+    input_price_per_mtok: float
+    output_price_per_mtok: float
+    context_window: int
+    max_output: int
+    latency: str
+    supports_thinking: bool = True
+    supports_vision: bool = True
+
+
+# Model registry with Claude 4.5 models
+MODELS = {
+    ModelTier.OPUS: ModelInfo(
+        id="claude-opus-4-5-20251101",
+        alias="claude-opus-4-5",
+        tier=ModelTier.OPUS,
+        description="Premium model with maximum intelligence for complex reasoning",
+        input_price_per_mtok=5.0,
+        output_price_per_mtok=25.0,
+        context_window=200_000,
+        max_output=64_000,
+        latency="Moderate",
+    ),
+    ModelTier.SONNET: ModelInfo(
+        id="claude-sonnet-4-5-20250929",
+        alias="claude-sonnet-4-5",
+        tier=ModelTier.SONNET,
+        description="Smart model for complex agents and coding",
+        input_price_per_mtok=3.0,
+        output_price_per_mtok=15.0,
+        context_window=200_000,
+        max_output=64_000,
+        latency="Fast",
+    ),
+    ModelTier.HAIKU: ModelInfo(
+        id="claude-haiku-4-5-20251001",
+        alias="claude-haiku-4-5",
+        tier=ModelTier.HAIKU,
+        description="Fastest model with near-frontier intelligence",
+        input_price_per_mtok=1.0,
+        output_price_per_mtok=5.0,
+        context_window=200_000,
+        max_output=64_000,
+        latency="Fastest",
+    ),
+}
+
+
 @dataclass
 class TokenUsage:
     """Track token usage across requests."""
@@ -31,6 +147,7 @@ class TokenUsage:
     output_tokens: int = 0
     cache_creation_tokens: int = 0
     cache_read_tokens: int = 0
+    thinking_tokens: int = 0
     
     @property
     def total_tokens(self) -> int:
@@ -50,6 +167,13 @@ class TokenUsage:
         self.output_tokens += usage.get("output_tokens", 0)
         self.cache_creation_tokens += usage.get("cache_creation_input_tokens", 0)
         self.cache_read_tokens += usage.get("cache_read_input_tokens", 0)
+    
+    def estimate_cost(self, model: ModelTier) -> float:
+        """Estimate cost in USD based on model pricing."""
+        info = MODELS[model]
+        input_cost = (self.input_tokens / 1_000_000) * info.input_price_per_mtok
+        output_cost = (self.output_tokens / 1_000_000) * info.output_price_per_mtok
+        return input_cost + output_cost
 
 
 @dataclass 
@@ -57,7 +181,7 @@ class BatchRequest:
     """Represents a single request in a batch."""
     custom_id: str
     messages: list
-    model: str = "claude-sonnet-4-20250514"
+    model: str = "claude-sonnet-4-5-20250929"
     max_tokens: int = 4096
     system: Optional[str] = None
     temperature: float = 1.0
@@ -76,26 +200,25 @@ class BatchResult:
 
 class ClaudeClient:
     """
-    Claude API client with batch processing and prompt caching support.
+    Claude API client with multi-model support, batch processing and prompt caching.
     
     Features:
-    - Prompt caching: Reuse expensive system prompts across requests
-    - Batch processing: Submit up to 10,000 requests in a single batch
-    - Extended thinking: Support for complex reasoning tasks
-    - Token tracking: Monitor usage and cache efficiency
-    """
+    - Multi-model: Opus 4.5, Sonnet 4.5, Haiku 4.5 with task-based selection
+    - Prompt caching: Reuse expensive system prompts (5-min or 1-hour TTL)
+    - Batch processing: Submit up to 10,000 requests (50% cost savings)
+    - Extended thinking: Complex reasoning with interleaved thinking support
+    - Token tracking: Monitor usage, cache efficiency, and cost estimation
     
-    # Available models
-    MODELS = {
-        "opus": "claude-sonnet-4-20250514",  # Claude Opus 4.5
-        "sonnet": "claude-sonnet-4-20250514",
-        "haiku": "claude-3-5-haiku-20241022",
-    }
+    Model Selection Guide:
+    - Opus 4.5: Complex reasoning, scientific analysis, academic writing
+    - Sonnet 4.5: Coding, agents, data analysis, general tasks (recommended default)
+    - Haiku 4.5: Classification, summarization, high-volume tasks
+    """
     
     def __init__(
         self,
         api_key: Optional[str] = None,
-        default_model: str = "opus",
+        default_model: Union[ModelTier, str] = ModelTier.SONNET,
         enable_caching: bool = True,
     ):
         """
@@ -103,7 +226,7 @@ class ClaudeClient:
         
         Args:
             api_key: Anthropic API key (defaults to ANTHROPIC_API_KEY env var)
-            default_model: Default model to use ('opus', 'sonnet', 'haiku')
+            default_model: Default model tier (OPUS, SONNET, HAIKU) or string
             enable_caching: Whether to enable prompt caching
         """
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
@@ -113,11 +236,52 @@ class ClaudeClient:
         self.client = anthropic.Anthropic(api_key=self.api_key)
         self.async_client = anthropic.AsyncAnthropic(api_key=self.api_key)
         
-        self.default_model = self.MODELS.get(default_model, default_model)
+        # Handle both string and ModelTier inputs for backward compatibility
+        if isinstance(default_model, str):
+            tier_map = {"opus": ModelTier.OPUS, "sonnet": ModelTier.SONNET, "haiku": ModelTier.HAIKU}
+            self.default_model = tier_map.get(default_model.lower(), ModelTier.SONNET)
+        else:
+            self.default_model = default_model
+        
         self.enable_caching = enable_caching
         self.usage = TokenUsage()
         
-        logger.info(f"Claude client initialized with model: {self.default_model}")
+        model_info = MODELS[self.default_model]
+        logger.info(f"Claude client initialized with model: {model_info.id}")
+    
+    def get_model_for_task(self, task: TaskType) -> str:
+        """
+        Get the recommended model ID for a specific task type.
+        
+        Args:
+            task: The type of task to perform
+            
+        Returns:
+            Model ID string for the API
+        """
+        tier = TASK_MODEL_MAP.get(task, self.default_model)
+        return MODELS[tier].id
+    
+    def get_model_id(self, model: Optional[Union[ModelTier, str]] = None) -> str:
+        """
+        Get model ID string from tier or string.
+        
+        Args:
+            model: Model tier enum or string name
+            
+        Returns:
+            Model ID string for the API
+        """
+        if model is None:
+            return MODELS[self.default_model].id
+        
+        if isinstance(model, str):
+            tier_map = {"opus": ModelTier.OPUS, "sonnet": ModelTier.SONNET, "haiku": ModelTier.HAIKU}
+            tier = tier_map.get(model.lower(), self.default_model)
+        else:
+            tier = model
+        
+        return MODELS[tier].id
     
     def _prepare_cached_content(self, content: str, cache_type: str = "ephemeral") -> dict:
         """
@@ -125,7 +289,7 @@ class ClaudeClient:
         
         Args:
             content: Text content to cache
-            cache_type: Cache type ('ephemeral' for 5-minute TTL)
+            cache_type: 'ephemeral' (5-min TTL) or 'ephemeral_1h' (1-hour TTL)
             
         Returns:
             Content block with cache_control
@@ -140,10 +304,12 @@ class ClaudeClient:
         self,
         messages: list,
         system: Optional[str] = None,
-        model: Optional[str] = None,
+        model: Optional[Union[ModelTier, str]] = None,
+        task: Optional[TaskType] = None,
         max_tokens: int = 4096,
         temperature: float = 1.0,
         cache_system: bool = True,
+        cache_ttl: Literal["ephemeral", "ephemeral_1h"] = "ephemeral",
     ) -> str:
         """
         Send a chat message to Claude.
@@ -151,27 +317,35 @@ class ClaudeClient:
         Args:
             messages: List of message dicts with 'role' and 'content'
             system: System prompt (will be cached if cache_system=True)
-            model: Model to use (defaults to self.default_model)
+            model: Model tier to use (overrides task-based selection)
+            task: Task type for automatic model selection
             max_tokens: Maximum tokens in response
             temperature: Sampling temperature (0-1)
             cache_system: Whether to cache the system prompt
+            cache_ttl: Cache duration ('ephemeral' = 5min, 'ephemeral_1h' = 1hr)
             
         Returns:
             Response text from Claude
         """
-        model = model or self.default_model
+        # Determine model: explicit > task-based > default
+        if model:
+            model_id = self.get_model_id(model)
+        elif task:
+            model_id = self.get_model_for_task(task)
+        else:
+            model_id = self.get_model_id()
         
         # Prepare system prompt with caching
         system_content = None
         if system:
             if self.enable_caching and cache_system:
-                system_content = [self._prepare_cached_content(system)]
+                system_content = [self._prepare_cached_content(system, cache_ttl)]
             else:
                 system_content = system
         
         # Make request
         kwargs = {
-            "model": model,
+            "model": model_id,
             "max_tokens": max_tokens,
             "messages": messages,
             "temperature": temperature,
@@ -185,7 +359,7 @@ class ClaudeClient:
         # Track usage
         self.usage.add(response.usage.model_dump())
         
-        logger.debug(f"Chat response: {response.usage}")
+        logger.debug(f"Chat response [{model_id}]: {response.usage}")
         
         return response.content[0].text
     
@@ -193,13 +367,20 @@ class ClaudeClient:
         self,
         messages: list,
         system: Optional[str] = None,
-        model: Optional[str] = None,
+        model: Optional[Union[ModelTier, str]] = None,
+        task: Optional[TaskType] = None,
         max_tokens: int = 4096,
         temperature: float = 1.0,
         cache_system: bool = True,
     ) -> str:
         """Async version of chat method."""
-        model = model or self.default_model
+        # Determine model: explicit > task-based > default
+        if model:
+            model_id = self.get_model_id(model)
+        elif task:
+            model_id = self.get_model_for_task(task)
+        else:
+            model_id = self.get_model_id()
         
         system_content = None
         if system:
@@ -209,7 +390,7 @@ class ClaudeClient:
                 system_content = system
         
         kwargs = {
-            "model": model,
+            "model": model_id,
             "max_tokens": max_tokens,
             "messages": messages,
             "temperature": temperature,
@@ -227,9 +408,10 @@ class ClaudeClient:
         self,
         messages: list,
         system: Optional[str] = None,
-        model: Optional[str] = None,
+        model: Optional[Union[ModelTier, str]] = None,
         max_tokens: int = 16000,
         budget_tokens: int = 10000,
+        interleaved: bool = False,
     ) -> tuple[str, str]:
         """
         Chat with extended thinking enabled.
@@ -237,20 +419,29 @@ class ClaudeClient:
         Extended thinking allows Claude to reason through complex problems
         before responding, improving accuracy on difficult tasks.
         
+        Best practices:
+        - Start with 16k+ budget for complex tasks
+        - Use batch processing for budgets > 32k tokens
+        - Use interleaved thinking with tool use for multi-step reasoning
+        
         Args:
             messages: List of message dicts
             system: System prompt
-            model: Model to use
+            model: Model tier (all 4.5 models support thinking)
             max_tokens: Maximum total tokens (thinking + response)
-            budget_tokens: Token budget for thinking process
+            budget_tokens: Token budget for thinking (min 1024)
+            interleaved: Enable interleaved thinking for tool use
             
         Returns:
             Tuple of (thinking_text, response_text)
         """
-        model = model or self.default_model
+        model_id = self.get_model_id(model)
+        
+        # Ensure minimum budget
+        budget_tokens = max(1024, budget_tokens)
         
         kwargs = {
-            "model": model,
+            "model": model_id,
             "max_tokens": max_tokens,
             "thinking": {
                 "type": "enabled",
@@ -263,7 +454,16 @@ class ClaudeClient:
         if system:
             kwargs["system"] = system
         
-        response = self.client.messages.create(**kwargs)
+        # Add interleaved thinking beta header if requested
+        extra_headers = {}
+        if interleaved:
+            extra_headers["anthropic-beta"] = "interleaved-thinking-2025-05-14"
+        
+        if extra_headers:
+            response = self.client.messages.create(**kwargs, extra_headers=extra_headers)
+        else:
+            response = self.client.messages.create(**kwargs)
+        
         self.usage.add(response.usage.model_dump())
         
         thinking_text = ""
@@ -285,6 +485,9 @@ class ClaudeClient:
         - Large-scale data processing
         - Bulk content generation
         - Non-time-sensitive tasks
+        - Extended thinking with large budgets (32k+ tokens)
+        
+        50% cost discount for batch processing.
         
         Args:
             requests: List of BatchRequest objects
@@ -318,12 +521,7 @@ class ClaudeClient:
         return batch.id
     
     def get_batch_status(self, batch_id: str) -> dict:
-        """
-        Get the status of a batch.
-        
-        Returns:
-            Dict with batch status information
-        """
+        """Get the status of a batch."""
         batch = self.client.messages.batches.retrieve(batch_id)
         
         return {
@@ -335,15 +533,7 @@ class ClaudeClient:
         }
     
     def get_batch_results(self, batch_id: str) -> list[BatchResult]:
-        """
-        Retrieve results from a completed batch.
-        
-        Args:
-            batch_id: ID of the completed batch
-            
-        Returns:
-            List of BatchResult objects
-        """
+        """Retrieve results from a completed batch."""
         results = []
         
         for result in self.client.messages.batches.results(batch_id):
@@ -379,7 +569,7 @@ class ClaudeClient:
             return False
     
     def get_usage_summary(self) -> dict:
-        """Get token usage summary."""
+        """Get token usage summary with cost estimates."""
         return {
             "input_tokens": self.usage.input_tokens,
             "output_tokens": self.usage.output_tokens,
@@ -387,23 +577,46 @@ class ClaudeClient:
             "cache_creation_tokens": self.usage.cache_creation_tokens,
             "cache_read_tokens": self.usage.cache_read_tokens,
             "cache_savings_percent": f"{self.usage.cache_savings:.1f}%",
+            "estimated_cost_usd": {
+                "opus": f"${self.usage.estimate_cost(ModelTier.OPUS):.4f}",
+                "sonnet": f"${self.usage.estimate_cost(ModelTier.SONNET):.4f}",
+                "haiku": f"${self.usage.estimate_cost(ModelTier.HAIKU):.4f}",
+            }
         }
     
     def reset_usage(self):
         """Reset token usage counters."""
         self.usage = TokenUsage()
+    
+    @staticmethod
+    def list_models() -> dict:
+        """List all available models with their specifications."""
+        return {
+            tier.value: {
+                "id": info.id,
+                "alias": info.alias,
+                "description": info.description,
+                "pricing": f"${info.input_price_per_mtok}/MTok in, ${info.output_price_per_mtok}/MTok out",
+                "context_window": f"{info.context_window:,} tokens",
+                "max_output": f"{info.max_output:,} tokens",
+                "latency": info.latency,
+                "supports_thinking": info.supports_thinking,
+                "supports_vision": info.supports_vision,
+            }
+            for tier, info in MODELS.items()
+        }
 
 
-# Convenience function for quick access
+# Convenience functions
 def get_claude_client(
-    model: str = "opus",
+    model: Union[ModelTier, str] = ModelTier.SONNET,
     enable_caching: bool = True,
 ) -> ClaudeClient:
     """
     Get a configured Claude client.
     
     Args:
-        model: Model to use ('opus', 'sonnet', 'haiku')
+        model: Default model tier (OPUS, SONNET, HAIKU) or string
         enable_caching: Whether to enable prompt caching
         
     Returns:
@@ -415,28 +628,70 @@ def get_claude_client(
     )
 
 
+def get_model_for_task(task: TaskType) -> str:
+    """Get recommended model ID for a task type."""
+    tier = TASK_MODEL_MAP.get(task, ModelTier.SONNET)
+    return MODELS[tier].id
+
+
 # Example usage
 if __name__ == "__main__":
     from rich import print as rprint
+    from rich.table import Table
+    
+    # List available models
+    rprint("\n[bold]Available Claude 4.5 Models:[/bold]")
+    table = Table(title="Claude 4.5 Model Comparison")
+    table.add_column("Tier", style="cyan")
+    table.add_column("Model ID", style="green")
+    table.add_column("Best For", style="yellow")
+    table.add_column("Latency", style="magenta")
+    table.add_column("Pricing (In/Out)", style="dim")
+    
+    for tier, info in MODELS.items():
+        table.add_row(
+            tier.value.upper(),
+            info.id,
+            info.description[:45] + "..." if len(info.description) > 45 else info.description,
+            info.latency,
+            f"${info.input_price_per_mtok}/${info.output_price_per_mtok}",
+        )
+    rprint(table)
+    
+    # Show task mappings
+    rprint("\n[bold]Task-Based Model Selection:[/bold]")
+    task_table = Table(title="Task Type to Model Mapping")
+    task_table.add_column("Task Type", style="cyan")
+    task_table.add_column("Model Tier", style="green")
+    task_table.add_column("Model ID", style="dim")
+    
+    for task, tier in TASK_MODEL_MAP.items():
+        task_table.add_row(
+            task.value,
+            tier.value.upper(),
+            MODELS[tier].id,
+        )
+    rprint(task_table)
     
     # Initialize client
-    client = get_claude_client()
+    client = get_claude_client(model=ModelTier.SONNET)
     
-    # Test basic chat
-    rprint("[bold]Testing basic chat...[/bold]")
+    # Test basic chat with task-based model selection
+    rprint("\n[bold]Testing task-based model selection...[/bold]")
+    
+    # Quick response (uses Haiku)
     response = client.chat(
         messages=[{"role": "user", "content": "What is 2 + 2?"}],
-        system="You are a helpful math tutor. Be concise.",
+        task=TaskType.QUICK_RESPONSE,
     )
-    rprint(f"Response: {response}")
+    rprint(f"Quick Response (Haiku): {response}")
     
-    # Test with caching (same system prompt)
-    rprint("\n[bold]Testing prompt caching...[/bold]")
-    response2 = client.chat(
-        messages=[{"role": "user", "content": "What is 3 + 3?"}],
-        system="You are a helpful math tutor. Be concise.",
+    # Coding task (uses Sonnet)
+    response = client.chat(
+        messages=[{"role": "user", "content": "Write a Python one-liner to reverse a string."}],
+        task=TaskType.CODING,
     )
-    rprint(f"Response: {response2}")
+    rprint(f"Coding (Sonnet): {response}")
     
     # Show usage
     rprint("\n[bold]Token Usage:[/bold]")
