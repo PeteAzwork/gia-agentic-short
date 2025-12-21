@@ -135,10 +135,10 @@ OTLP_ENDPOINT=http://localhost:4318/v1/traces
 
 ```bash
 # Phase 1: Initial analysis workflow
-.venv/bin/python run_workflow.py user-input/your-project
+.venv/bin/python scripts/run_workflow.py user-input/your-project
 
 # Phase 1.5: Gap resolution workflow
-.venv/bin/python run_gap_resolution.py user-input/your-project
+.venv/bin/python scripts/run_gap_resolution.py user-input/your-project
 
 # Phase 2: Literature and planning workflow (requires Phase 1)
 .venv/bin/python -m src.agents.literature_workflow user-input/your-project
@@ -148,7 +148,7 @@ OTLP_ENDPOINT=http://localhost:4318/v1/traces
 
 ```bash
 # Start web server for project submission
-.venv/bin/python research_intake_server.py
+.venv/bin/python scripts/research_intake_server.py
 # Open http://localhost:8080
 ```
 
@@ -259,10 +259,11 @@ gia-agentic-short/
 ├── tests/                       # pytest test suite (170+ tests)
 ├── evaluation/                  # Test queries and metrics
 ├── user-input/                  # Research projects
-├── run_workflow.py              # Phase 1 workflow runner
-├── run_gap_resolution.py        # Gap resolution runner
-├── run_literature_workflow.py   # Phase 2 workflow runner
-└── research_intake_server.py    # Web intake form server
+├── scripts/
+│   ├── run_workflow.py          # Phase 1 workflow runner
+│   ├── run_gap_resolution.py    # Gap resolution runner
+│   ├── run_literature_workflow.py # Phase 2 workflow runner
+│   └── research_intake_server.py # Web intake form server
 ```
 
 ## Building New Agents
@@ -376,7 +377,7 @@ export OTLP_ENDPOINT=http://localhost:4318/v1/traces
 rm -rf user-input/your-project/.workflow_cache/
 
 # Regenerate all outputs
-.venv/bin/python run_workflow.py user-input/your-project
+.venv/bin/python scripts/run_workflow.py user-input/your-project
 ```
 
 ## Contributing

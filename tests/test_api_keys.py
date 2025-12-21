@@ -15,13 +15,9 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
-
-# Load environment variables
-load_dotenv()
 
 console = Console()
 

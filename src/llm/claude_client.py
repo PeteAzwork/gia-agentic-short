@@ -20,18 +20,47 @@ for more information see: https://giatenica.com
 """
 
 import os
+import re
+from pathlib import Path
 from typing import Optional, Literal, Union
 from dataclasses import dataclass
 from enum import Enum
 
 import anthropic
 import httpx
-from dotenv import load_dotenv
 from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-# Load environment variables
-load_dotenv()
+def _load_env_file_lenient() -> None:
+    """Load .env from repo root without raising or printing parse warnings."""
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    if not env_path.exists():
+        return
+
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):].lstrip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if not key:
+            continue
+        if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", key):
+            continue
+        os.environ.setdefault(key, value)
+
+
+_load_env_file_lenient()
 
 
 class ModelTier(Enum):

@@ -27,9 +27,11 @@ env/
 .DS_Store
 Thumbs.db
 
+#+#+#+#+
 # Project specific
-.github/
-docs/
+#
+# Keep user research data out of git (see below), but keep documentation and
+# GitHub metadata tracked.
 
 # Jupyter
 .ipynb_checkpoints/
@@ -52,7 +54,7 @@ logs/
 workflow_*.log
 
 # Ignore specific files
-.github/copilot-instructions.md
+.github/copilot-instructions.local.md
 
 # User data (sensitive research projects)
 /user-input/*

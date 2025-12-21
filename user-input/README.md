@@ -6,7 +6,7 @@ This directory stores research project intakes created via the Research Intake F
 
 1. Start the intake server:
    ```bash
-   python research_intake_server.py
+   python scripts/research_intake_server.py
    ```
 
 2. Open http://localhost:8080 in your browser

@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 
+from .project_io import get_project_id
+
 
 class TaskStatus(Enum):
     """Status of a tracked task."""
@@ -653,27 +655,10 @@ def initialize_tracking(project_folder: str) -> TimeTrackingReport:
     if not plan_path.exists():
         logger.warning(f"PROJECT_PLAN.md not found in {project_folder}")
         # Return empty report
-        project_json_path = Path(project_folder) / "project.json"
-        project_id = "unknown"
-        if project_json_path.exists():
-            try:
-                with open(project_json_path, 'r') as f:
-                    project_data = json.load(f)
-                project_id = project_data.get("id", "unknown")
-            except (json.JSONDecodeError, IOError, OSError):
-                pass
+        project_id = get_project_id(project_folder)
         return TimeTrackingReport(project_id=project_id, project_folder=project_folder)
     
-    # Get project ID
-    project_json_path = Path(project_folder) / "project.json"
-    project_id = "unknown"
-    if project_json_path.exists():
-        try:
-            with open(project_json_path, 'r') as f:
-                project_data = json.load(f)
-            project_id = project_data.get("id", "unknown")
-        except (json.JSONDecodeError, IOError, OSError):
-            pass
+    project_id = get_project_id(project_folder)
     
     with open(plan_path, 'r') as f:
         content = f.read()

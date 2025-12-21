@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 from loguru import logger
 
+from .project_io import get_project_id
+
 
 class ReadinessCategory(Enum):
     """Categories of readiness assessment."""
@@ -888,16 +890,7 @@ def assess_project_readiness(project_folder: str) -> ReadinessReport:
     
     Checks files, content, and updates checklist status.
     """
-    # Get project ID
-    project_json_path = Path(project_folder) / "project.json"
-    project_id = "unknown"
-    if project_json_path.exists():
-        try:
-            with open(project_json_path, 'r') as f:
-                data = json.load(f)
-            project_id = data.get("id", "unknown")
-        except (json.JSONDecodeError, IOError, OSError):
-            pass
+    project_id = get_project_id(project_folder)
     
     # Load existing report or create new one
     report_path = Path(project_folder) / "readiness_report.json"

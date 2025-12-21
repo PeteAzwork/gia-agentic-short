@@ -17,6 +17,11 @@ from .validation import (
     is_safe_path,
 )
 
+from .project_io import (
+    load_project_json,
+    get_project_id,
+)
+
 # Time tracking utilities
 from .time_tracking import (
     TimeEstimate,
@@ -78,6 +83,9 @@ __all__ = [
     "sanitize_filename",
     "safe_json_loads",
     "is_safe_path",
+    # Project IO
+    "load_project_json",
+    "get_project_id",
     # Time tracking
     "TimeEstimate",
     "ExecutionBudget",
