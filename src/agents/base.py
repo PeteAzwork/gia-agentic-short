@@ -161,6 +161,7 @@ class BaseAgent(ABC):
         include_date: bool = True,
         include_web_awareness: bool = True,
         cache_ttl: Literal["ephemeral"] = "ephemeral",
+        time_budget_seconds: Optional[int] = None,
     ):
         """
         Initialize agent with Claude client and configuration.
@@ -173,12 +174,15 @@ class BaseAgent(ABC):
             include_date: Whether to add current date context to prompts
             include_web_awareness: Whether to add web search awareness
             cache_ttl: Cache duration ('ephemeral' = 5min)
+            time_budget_seconds: Optional execution time budget (warn-only, does not abort)
         """
         self.name = name
         self.task_type = task_type
         self.cache_ttl = cache_ttl
         self.client = client or ClaudeClient()
         self.model_tier = self.client.get_model_for_task(task_type)
+        self.time_budget_seconds = time_budget_seconds
+        self._execution_start_time: Optional[float] = None
         
         # Build enhanced system prompt with best practices
         self.system_prompt = build_enhanced_system_prompt(
@@ -256,11 +260,60 @@ class BaseAgent(ABC):
             elapsed = time.time() - start_time
             logger.debug(f"{self.name} completed in {elapsed:.2f}s, {tokens} tokens")
             
+            # Check time budget (warn-only, does not abort)
+            self._check_time_budget(elapsed)
+            
             return content, tokens
             
         except Exception as e:
             logger.error(f"{self.name} error: {e}")
             raise
+    
+    def _check_time_budget(self, elapsed_seconds: float) -> Optional[str]:
+        """
+        Check if execution time exceeds budget. Warn-only policy.
+        
+        Args:
+            elapsed_seconds: Time taken so far
+            
+        Returns:
+            Warning message if budget exceeded, None otherwise
+        """
+        if not self.time_budget_seconds:
+            return None
+        
+        warning_threshold = 0.8  # Warn at 80% of budget
+        
+        if elapsed_seconds > self.time_budget_seconds:
+            overage = elapsed_seconds - self.time_budget_seconds
+            msg = (
+                f"BUDGET EXCEEDED: {self.name} ran {elapsed_seconds:.1f}s "
+                f"(budget: {self.time_budget_seconds}s, over by {overage:.1f}s)"
+            )
+            logger.warning(msg)
+            return msg
+        elif elapsed_seconds > self.time_budget_seconds * warning_threshold:
+            remaining = self.time_budget_seconds - elapsed_seconds
+            msg = (
+                f"BUDGET WARNING: {self.name} at {elapsed_seconds:.1f}s "
+                f"({remaining:.1f}s remaining of {self.time_budget_seconds}s budget)"
+            )
+            logger.warning(msg)
+            return msg
+        
+        return None
+    
+    def start_execution_timer(self):
+        """Start the execution timer for budget tracking."""
+        import time
+        self._execution_start_time = time.time()
+    
+    def get_elapsed_time(self) -> float:
+        """Get elapsed time since execution started."""
+        import time
+        if self._execution_start_time is None:
+            return 0.0
+        return time.time() - self._execution_start_time
     
     def _build_result(
         self,

@@ -45,6 +45,10 @@ class AgentCapability(Enum):
     CONSISTENCY_CHECK = "consistency_check"
     STYLE_ENFORCEMENT = "style_enforcement"  # Writing style validation
     
+    # Tracking capabilities
+    TIME_TRACKING = "time_tracking"
+    READINESS_ASSESSMENT = "readiness_assessment"
+    
     # Meta capabilities
     OVERVIEW_GENERATION = "overview_generation"
     RESEARCH_EXPLORATION = "research_exploration"
@@ -89,6 +93,8 @@ class AgentSpec:
     max_iterations: int = 3              # Max self-revision iterations
     supports_revision: bool = True       # Whether it can revise its output
     uses_extended_thinking: bool = False # Whether it uses thinking mode
+    max_execution_seconds: Optional[int] = None  # Budget (None = unlimited)
+    typical_execution_range: tuple = (30, 300)   # Expected range in seconds
 
 
 # Agent Registry Definition
@@ -461,6 +467,35 @@ AGENT_REGISTRY: Dict[str, AgentSpec] = {
         supports_revision=False,  # Validator doesn't produce revisable content
         uses_extended_thinking=False,
     ),
+    
+    "A15": AgentSpec(
+        id="A15",
+        name="ReadinessAssessor",
+        class_name="ReadinessAssessorAgent",
+        module_path="src.agents.readiness_assessor",
+        model_tier=ModelTier.HAIKU,  # Fast assessment, minimal reasoning
+        capabilities=[
+            AgentCapability.TIME_TRACKING,
+            AgentCapability.READINESS_ASSESSMENT,
+        ],
+        input_schema=AgentInputSchema(
+            required=["project_folder"],
+            optional=["workflow_results", "use_llm_analysis"],
+            description="Assesses project readiness and tracks time against estimates",
+        ),
+        output_schema=AgentOutputSchema(
+            content_type="structured",
+            structured_fields=["time_tracking", "readiness", "automation_coverage", "blocking_gaps"],
+            files_created=["time_tracking_report.json", "readiness_report.json", "assessment_report.json"],
+            description="Comprehensive project assessment with time tracking and readiness scoring",
+        ),
+        description="Tracks execution time against PROJECT_PLAN.md estimates, scores paper readiness across all phases/steps/substeps, identifies automation gaps",
+        can_call=[],  # Assessment agent, doesn't call others
+        supports_revision=False,
+        uses_extended_thinking=False,
+        max_execution_seconds=60,  # Fast assessment
+        typical_execution_range=(5, 30),
+    ),
 }
 
 
@@ -605,6 +640,7 @@ class AgentRegistry:
             "Phase 2 - Literature": ["A05", "A06", "A07", "A08", "A09"],
             "Phase 3 - Gap Resolution": ["A10", "A11"],
             "Quality Assurance": ["A12", "A13", "A14"],
+            "Project Tracking": ["A15"],
         }
         
         for phase_name, agent_ids in phases.items():

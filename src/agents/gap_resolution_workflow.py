@@ -34,6 +34,7 @@ from src.agents.gap_resolver import GapResolverAgent, OverviewUpdaterAgent
 from src.agents.base import AgentResult
 from src.agents.cache import WorkflowCache
 from src.agents.consistency_checker import ConsistencyCheckerAgent
+from src.agents.readiness_assessor import ReadinessAssessorAgent
 from src.tracing import init_tracing, get_tracer
 from loguru import logger
 
@@ -49,6 +50,7 @@ class GapResolutionWorkflowResult:
     updated_overview: Optional[AgentResult] = None
     updated_overview_path: Optional[str] = None
     consistency_check: Optional[AgentResult] = None  # Cross-document consistency validation
+    readiness_assessment: Optional[AgentResult] = None  # Project readiness assessment
     gaps_resolved: int = 0
     gaps_total: int = 0
     total_tokens: int = 0
@@ -74,6 +76,7 @@ class GapResolutionWorkflowResult:
                 "gap_resolution": self.gap_resolution.to_dict() if self.gap_resolution else None,
                 "updated_overview": self.updated_overview.to_dict() if self.updated_overview else None,
                 "consistency_check": self.consistency_check.to_dict() if self.consistency_check else None,
+                "readiness_assessment": self.readiness_assessment.to_dict() if self.readiness_assessment else None,
             }
         }
 
@@ -123,8 +126,9 @@ class GapResolutionWorkflow:
         )
         self.overview_updater = OverviewUpdaterAgent(client=self.client)
         self.consistency_checker = ConsistencyCheckerAgent(client=self.client)
+        self.readiness_assessor = ReadinessAssessorAgent(client=self.client)
         
-        logger.info(f"Gap resolution workflow initialized with 3 agents (cache={'enabled' if use_cache else 'disabled'})")
+        logger.info(f"Gap resolution workflow initialized with 4 agents (cache={'enabled' if use_cache else 'disabled'})")
     
     async def run(self, project_folder: str) -> GapResolutionWorkflowResult:
         """
@@ -281,10 +285,10 @@ class GapResolutionWorkflow:
                         result.errors.append(f"Overview update error: {str(e)}")
                         span.set_attribute("error", str(e))
             else:
-                logger.info("Step 2/3: Skipping Overview Updater (no gaps to process)")
+                logger.info("Step 2/4: Skipping Overview Updater (no gaps to process)")
             
             # Step 3: Cross-Document Consistency Check (non-blocking)
-            logger.info("Step 3/3: Running Consistency Check...")
+            logger.info("Step 3/4: Running Consistency Check...")
             with self.tracer.start_as_current_span("consistency_check") as span:
                 span.set_attribute("agent", "ConsistencyChecker")
                 span.set_attribute("model_tier", "sonnet")
@@ -314,6 +318,33 @@ class GapResolutionWorkflow:
                     logger.error(f"Consistency check error: {e}")
                     span.set_attribute("error", str(e))
                     # Don't add to errors - consistency check is non-blocking
+            
+            # Step 4: Project Readiness Assessment (non-blocking)
+            logger.info("Step 4/4: Running Readiness Assessment...")
+            with self.tracer.start_as_current_span("readiness_assessment") as span:
+                span.set_attribute("agent", "ReadinessAssessor")
+                span.set_attribute("model_tier", "haiku")
+                try:
+                    assessment_result = await self.readiness_assessor.assess_project(project_folder)
+                    result.readiness_assessment = assessment_result
+                    result.total_tokens += assessment_result.tokens_used
+                    span.set_attribute("tokens_used", assessment_result.tokens_used)
+                    span.set_attribute("success", assessment_result.success)
+                    
+                    if assessment_result.structured_data:
+                        overall_score = assessment_result.structured_data.get("overall_score", 0)
+                        automation_gaps = assessment_result.structured_data.get("automation_gaps", [])
+                        span.set_attribute("overall_score", overall_score)
+                        span.set_attribute("automation_gap_count", len(automation_gaps))
+                        
+                        if automation_gaps:
+                            logger.info(f"Readiness assessment: {overall_score:.0%} complete, {len(automation_gaps)} automation gaps")
+                        else:
+                            logger.info(f"Readiness assessment: {overall_score:.0%} complete, fully automated")
+                except Exception as e:
+                    logger.error(f"Readiness assessment error: {e}")
+                    span.set_attribute("error", str(e))
+                    # Don't add to errors - readiness assessment is non-blocking
             
             # Save workflow results
             self._save_workflow_results(project_path, result)

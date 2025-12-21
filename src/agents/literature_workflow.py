@@ -38,6 +38,7 @@ from src.agents.project_planner import ProjectPlannerAgent
 from src.agents.base import AgentResult
 from src.agents.cache import WorkflowCache
 from src.agents.consistency_checker import ConsistencyCheckerAgent
+from src.agents.readiness_assessor import ReadinessAssessorAgent
 from src.tracing import init_tracing, get_tracer
 from loguru import logger
 
@@ -54,6 +55,7 @@ class LiteratureWorkflowResult:
     paper_structure_result: Optional[AgentResult] = None
     project_plan_result: Optional[AgentResult] = None
     consistency_check_result: Optional[AgentResult] = None  # Cross-document consistency validation
+    readiness_assessment: Optional[AgentResult] = None  # Project readiness assessment
     total_tokens: int = 0
     total_time: float = 0.0
     errors: list = field(default_factory=list)
@@ -76,6 +78,7 @@ class LiteratureWorkflowResult:
                 "paper_structure": self.paper_structure_result.to_dict() if self.paper_structure_result else None,
                 "project_plan": self.project_plan_result.to_dict() if self.project_plan_result else None,
                 "consistency_check": self.consistency_check_result.to_dict() if self.consistency_check_result else None,
+                "readiness_assessment": self.readiness_assessment.to_dict() if self.readiness_assessment else None,
             }
         }
 
@@ -137,8 +140,9 @@ class LiteratureWorkflow:
         self.paper_structurer = PaperStructureAgent(client=self.client)
         self.project_planner = ProjectPlannerAgent(client=self.client)
         self.consistency_checker = ConsistencyCheckerAgent(client=self.client)
+        self.readiness_assessor = ReadinessAssessorAgent(client=self.client)
         
-        logger.info(f"Literature workflow initialized with 6 agents (cache={'enabled' if use_cache else 'disabled'})")
+        logger.info(f"Literature workflow initialized with 7 agents (cache={'enabled' if use_cache else 'disabled'})")
     
     async def run(self, project_folder: str) -> LiteratureWorkflowResult:
         """
@@ -403,7 +407,7 @@ class LiteratureWorkflow:
                     span.set_attribute("error", str(e))
             
             # Step 6: Cross-Document Consistency Check (non-blocking)
-            logger.info("Step 6/6: Running Consistency Check...")
+            logger.info("Step 6/7: Running Consistency Check...")
             with self.tracer.start_as_current_span("consistency_check") as span:
                 span.set_attribute("agent", "ConsistencyChecker")
                 span.set_attribute("model_tier", "sonnet")
@@ -433,6 +437,33 @@ class LiteratureWorkflow:
                     logger.error(f"Consistency check error: {e}")
                     span.set_attribute("error", str(e))
                     # Don't add to errors - consistency check is non-blocking
+            
+            # Step 7: Project Readiness Assessment (non-blocking)
+            logger.info("Step 7/7: Running Readiness Assessment...")
+            with self.tracer.start_as_current_span("readiness_assessment") as span:
+                span.set_attribute("agent", "ReadinessAssessor")
+                span.set_attribute("model_tier", "haiku")
+                try:
+                    assessment_result = await self.readiness_assessor.assess_project(project_folder)
+                    result.readiness_assessment = assessment_result
+                    result.total_tokens += assessment_result.tokens_used
+                    span.set_attribute("tokens_used", assessment_result.tokens_used)
+                    span.set_attribute("success", assessment_result.success)
+                    
+                    if assessment_result.structured_data:
+                        overall_score = assessment_result.structured_data.get("overall_score", 0)
+                        automation_gaps = assessment_result.structured_data.get("automation_gaps", [])
+                        span.set_attribute("overall_score", overall_score)
+                        span.set_attribute("automation_gap_count", len(automation_gaps))
+                        
+                        if automation_gaps:
+                            logger.info(f"Readiness assessment: {overall_score:.0%} complete, {len(automation_gaps)} automation gaps")
+                        else:
+                            logger.info(f"Readiness assessment: {overall_score:.0%} complete, fully automated")
+                except Exception as e:
+                    logger.error(f"Readiness assessment error: {e}")
+                    span.set_attribute("error", str(e))
+                    # Don't add to errors - readiness assessment is non-blocking
             
             # Finalize
             result.total_time = time.time() - start_time
