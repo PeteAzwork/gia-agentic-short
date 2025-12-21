@@ -142,7 +142,8 @@ class ProjectPlannerAgent(BaseAgent):
             context: Should contain:
                 - 'research_overview': Current research overview
                 - 'hypothesis_result': Hypothesis development output
-                - 'literature_result': Literature synthesis output
+                - 'literature_result': Literature search output (Edison papers)
+                - 'literature_synthesis': Literature synthesis output (LITERATURE_REVIEW.md)
                 - 'paper_structure': Paper structure output
                 - 'project_data': Project metadata
                 - 'project_folder': Path to save output files
@@ -156,6 +157,7 @@ class ProjectPlannerAgent(BaseAgent):
         research_overview = context.get("research_overview", "")
         hypothesis_result = context.get("hypothesis_result", {})
         literature_result = context.get("literature_result", {})
+        literature_synthesis = context.get("literature_synthesis", {})
         paper_structure = context.get("paper_structure", {})
         project_data = context.get("project_data", {})
         project_folder = context.get("project_folder")
@@ -166,6 +168,7 @@ class ProjectPlannerAgent(BaseAgent):
                 research_overview=research_overview,
                 hypothesis_result=hypothesis_result,
                 literature_result=literature_result,
+                literature_synthesis=literature_synthesis,
                 paper_structure=paper_structure,
                 project_data=project_data,
             )
@@ -237,6 +240,7 @@ class ProjectPlannerAgent(BaseAgent):
         research_overview: str,
         hypothesis_result: dict,
         literature_result: dict,
+        literature_synthesis: dict,
         paper_structure: dict,
         project_data: dict,
     ) -> str:
@@ -247,6 +251,7 @@ class ProjectPlannerAgent(BaseAgent):
             research_overview=research_overview,
             hypothesis_result=hypothesis_result,
             literature_result=literature_result,
+            literature_synthesis=literature_synthesis,
             paper_structure=paper_structure,
         )
         
@@ -254,6 +259,13 @@ class ProjectPlannerAgent(BaseAgent):
         target_journal = project_data.get("target_journal", "Top Finance Journal")
         paper_type = project_data.get("paper_type", "short article")
         timeline = project_data.get("timeline", "")
+        
+        # Get literature stats from synthesis if available, else from search
+        lit_data = literature_synthesis.get("structured_data", {}) if literature_synthesis else {}
+        if not lit_data:
+            lit_data = literature_result.get("structured_data", {}) if literature_result else {}
+        papers_count = lit_data.get("citations_count", 0) or lit_data.get("papers_reviewed", 0)
+        research_streams = lit_data.get("research_streams", [])
         
         message = f"""Please create a detailed project plan for this academic finance research paper.
 
@@ -280,8 +292,9 @@ class ProjectPlannerAgent(BaseAgent):
 {hypothesis_result.get("content", "")[:1500] if hypothesis_result else "Not yet developed"}
 
 ## LITERATURE STATUS
-Papers reviewed: {literature_result.get("structured_data", {}).get("citations_count", 0) if literature_result else 0}
-Research streams identified: {len(literature_result.get("structured_data", {}).get("research_streams", [])) if literature_result else 0}
+Papers reviewed: {papers_count}
+Research streams identified: {len(research_streams)}
+Literature review file: {"Generated (LITERATURE_REVIEW.md)" if literature_synthesis and literature_synthesis.get("success") else "Not yet generated"}
 
 ## PAPER STRUCTURE STATUS
 {"Paper structure created" if paper_structure else "Paper structure not yet created"}
@@ -304,6 +317,7 @@ Consider this is a short paper (5-10 pages) for a top finance journal."""
         research_overview: str,
         hypothesis_result: dict,
         literature_result: dict,
+        literature_synthesis: dict,
         paper_structure: dict,
     ) -> Dict[str, List[str]]:
         """Assess current project state."""
@@ -326,18 +340,35 @@ Consider this is a short paper (5-10 pages) for a top finance journal."""
         else:
             remaining.append("Develop testable hypothesis")
         
-        # Check literature
-        if literature_result and literature_result.get("success"):
+        # Check literature - synthesis is the primary indicator (contains LITERATURE_REVIEW.md)
+        # Literature search (literature_result) is intermediate step
+        if literature_synthesis and literature_synthesis.get("success"):
+            # Synthesis completed - this means LITERATURE_REVIEW.md was generated
+            lit_data = literature_synthesis.get("structured_data", {})
+            papers_count = lit_data.get("citations_count", 0) or lit_data.get("papers_reviewed", 0)
+            completed.append(f"Literature review completed ({papers_count} papers synthesized)")
+            # Check if files were saved
+            files_saved = lit_data.get("files_saved", {})
+            if files_saved.get("literature_review"):
+                completed.append("LITERATURE_REVIEW.md generated")
+            if files_saved.get("references"):
+                completed.append("References bibliography generated")
+        elif literature_result and literature_result.get("success"):
+            # Search completed but synthesis not yet done
             citations_count = literature_result.get("structured_data", {}).get("citations_count", 0)
-            completed.append(f"Literature review ({citations_count} papers)")
+            in_progress.append(f"Literature search completed ({citations_count} papers found), synthesis pending")
         elif literature_result:
-            in_progress.append("Literature search")
+            in_progress.append("Literature search in progress")
         else:
             remaining.append("Complete literature review")
         
         # Check paper structure
         if paper_structure and paper_structure.get("success"):
             completed.append("Paper structure created")
+            # Check for LaTeX template
+            files_saved = paper_structure.get("structured_data", {}).get("files_saved", {})
+            if files_saved.get("main_tex"):
+                completed.append("LaTeX template generated")
         else:
             remaining.append("Create paper structure")
         
