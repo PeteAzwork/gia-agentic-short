@@ -263,18 +263,17 @@ class ClaudeClient:
         model_info = MODELS[self.default_model]
         logger.info(f"Claude client initialized with model: {model_info.id}")
     
-    def get_model_for_task(self, task: TaskType) -> str:
+    def get_model_for_task(self, task: TaskType) -> ModelTier:
         """
-        Get the recommended model ID for a specific task type.
+        Get the recommended model tier for a specific task type.
         
         Args:
             task: The type of task to perform
             
         Returns:
-            Model ID string for the API
+            ModelTier enum for the task
         """
-        tier = TASK_MODEL_MAP.get(task, self.default_model)
-        return MODELS[tier].id
+        return TASK_MODEL_MAP.get(task, self.default_model)
     
     def get_model_id(self, model: Optional[Union[ModelTier, str]] = None) -> str:
         """
