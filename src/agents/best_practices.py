@@ -160,11 +160,9 @@ class ModelGuidelines:
 class CachingStrategy(Enum):
     """Prompt caching strategies based on Anthropic best practices."""
     
-    # 5-minute cache (default): Use for frequently repeated prompts
+    # 5-minute cache: Use for frequently repeated prompts and system prompts
+    # Note: Anthropic API only supports 'ephemeral' (5-min TTL)
     EPHEMERAL = "ephemeral"
-    
-    # 1-hour cache: Use for stable system prompts, agentic workflows
-    LONG_TERM = "ephemeral_1h"
 
 
 @dataclass

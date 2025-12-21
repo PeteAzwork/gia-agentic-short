@@ -213,7 +213,7 @@ class LiteratureWorkflow:
                         logger.info("Step 1/5: Using cached hypothesis result")
                     else:
                         hyp_result = await self.hypothesis_developer.execute(context)
-                        if cache:
+                        if cache and hyp_result.success:
                             cache.save("hypothesis_developer", hyp_result.to_dict(), context, project_id)
                         span.set_attribute("cached", False)
                     
@@ -230,6 +230,8 @@ class LiteratureWorkflow:
                     logger.error(f"Hypothesis development error: {e}")
                     result.errors.append(f"Hypothesis development error: {str(e)}")
                     span.set_attribute("error", str(e))
+                    # Set empty hypothesis_result so subsequent steps don't fail
+                    context["hypothesis_result"] = {}
             
             # Step 2: Literature Search
             logger.info("Step 2/5: Searching literature via Edison API...")
@@ -243,8 +245,10 @@ class LiteratureWorkflow:
                         span.set_attribute("cached", True)
                         logger.info("Step 2/5: Using cached literature search result")
                     else:
+                        logger.info("Step 2/5: Executing Edison literature search...")
                         lit_search_result = await self.literature_searcher.execute(context)
-                        if cache:
+                        logger.info(f"Step 2/5: Edison search returned, success={lit_search_result.success}")
+                        if cache and lit_search_result.success:
                             cache.save("literature_search", lit_search_result.to_dict(), context, project_id)
                         span.set_attribute("cached", False)
                     
@@ -258,9 +262,13 @@ class LiteratureWorkflow:
                         result.errors.append(f"Literature search failed: {lit_search_result.error}")
                         span.set_attribute("error", lit_search_result.error)
                 except Exception as e:
+                    import traceback
                     logger.error(f"Literature search error: {e}")
+                    logger.error(f"Traceback: {traceback.format_exc()}")
                     result.errors.append(f"Literature search error: {str(e)}")
                     span.set_attribute("error", str(e))
+                    # Set empty result so subsequent steps don't fail
+                    context["literature_result"] = {}
             
             # Step 3: Literature Synthesis
             logger.info("Step 3/5: Synthesizing literature...")
@@ -274,8 +282,10 @@ class LiteratureWorkflow:
                         span.set_attribute("cached", True)
                         logger.info("Step 3/5: Using cached synthesis result")
                     else:
+                        logger.info("Step 3/5: Executing literature synthesis...")
                         lit_synth_result = await self.literature_synthesizer.execute(context)
-                        if cache:
+                        logger.info(f"Step 3/5: Synthesis returned, success={lit_synth_result.success}")
+                        if cache and lit_synth_result.success:
                             cache.save("literature_synthesis", lit_synth_result.to_dict(), context, project_id)
                         span.set_attribute("cached", False)
                     
@@ -294,9 +304,13 @@ class LiteratureWorkflow:
                         result.errors.append(f"Literature synthesis failed: {lit_synth_result.error}")
                         span.set_attribute("error", lit_synth_result.error)
                 except Exception as e:
+                    import traceback
                     logger.error(f"Literature synthesis error: {e}")
+                    logger.error(f"Traceback: {traceback.format_exc()}")
                     result.errors.append(f"Literature synthesis error: {str(e)}")
                     span.set_attribute("error", str(e))
+                    # Set empty result so subsequent steps don't fail
+                    context["literature_synthesis"] = {}
             
             # Step 4: Paper Structure
             logger.info("Step 4/5: Creating paper structure...")
@@ -311,7 +325,7 @@ class LiteratureWorkflow:
                         logger.info("Step 4/5: Using cached paper structure")
                     else:
                         paper_result = await self.paper_structurer.execute(context)
-                        if cache:
+                        if cache and paper_result.success:
                             cache.save("paper_structure", paper_result.to_dict(), context, project_id)
                         span.set_attribute("cached", False)
                     
@@ -347,7 +361,7 @@ class LiteratureWorkflow:
                         logger.info("Step 5/5: Using cached project plan")
                     else:
                         plan_result = await self.project_planner.execute(context)
-                        if cache:
+                        if cache and plan_result.success:
                             cache.save("project_planner", plan_result.to_dict(), context, project_id)
                         span.set_attribute("cached", False)
                     
@@ -397,10 +411,37 @@ class LiteratureWorkflow:
             return result
     
     def _result_from_cache(self, cached_data: dict) -> AgentResult:
-        """Convert cached dictionary back to AgentResult."""
-        agent_result = cached_data.get("agent_result", {})
-        return AgentResult(
+        """Convert cached dictionary back to AgentResult.
+        
+        Note: cache.load() returns the agent_result dict directly (not wrapped),
+        so cached_data IS the agent_result, not {agent_result: {...}}.
+        """
+        from src.llm.claude_client import TaskType, ModelTier
+        
+        # cached_data IS the agent_result (cache.load returns entry.agent_result directly)
+        agent_result = cached_data
+        logger.debug(f"_result_from_cache: agent_result keys = {list(agent_result.keys())}")
+        logger.debug(f"_result_from_cache: structured_data = {agent_result.get('structured_data')}")
+        
+        # Parse task_type and model_tier from cached values
+        task_type_str = agent_result.get("task_type", "data_analysis")
+        model_tier_str = agent_result.get("model_tier", "sonnet")
+        
+        # Convert strings to enums
+        try:
+            task_type = TaskType(task_type_str)
+        except ValueError:
+            task_type = TaskType.DATA_ANALYSIS
+        
+        try:
+            model_tier = ModelTier(model_tier_str)
+        except ValueError:
+            model_tier = ModelTier.SONNET
+        
+        result = AgentResult(
             agent_name=agent_result.get("agent_name", "unknown"),
+            task_type=task_type,
+            model_tier=model_tier,
             success=agent_result.get("success", False),
             content=agent_result.get("content", ""),
             tokens_used=agent_result.get("tokens_used", 0),
@@ -408,6 +449,8 @@ class LiteratureWorkflow:
             error=agent_result.get("error"),
             structured_data=agent_result.get("structured_data"),
         )
+        logger.debug(f"_result_from_cache: result.structured_data = {result.structured_data}")
+        return result
 
 
 async def run_literature_workflow(project_folder: str) -> LiteratureWorkflowResult:

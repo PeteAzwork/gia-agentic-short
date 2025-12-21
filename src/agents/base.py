@@ -85,7 +85,7 @@ class BaseAgent(ABC):
         client: Optional[ClaudeClient] = None,
         include_date: bool = True,
         include_web_awareness: bool = True,
-        cache_ttl: Literal["ephemeral", "ephemeral_1h"] = "ephemeral_1h",
+        cache_ttl: Literal["ephemeral"] = "ephemeral",
     ):
         """
         Initialize agent with Claude client and configuration.
@@ -97,7 +97,7 @@ class BaseAgent(ABC):
             client: Optional ClaudeClient instance (creates new if not provided)
             include_date: Whether to add current date context to prompts
             include_web_awareness: Whether to add web search awareness
-            cache_ttl: Cache duration ('ephemeral' = 5min, 'ephemeral_1h' = 1hr)
+            cache_ttl: Cache duration ('ephemeral' = 5min)
         """
         self.name = name
         self.task_type = task_type

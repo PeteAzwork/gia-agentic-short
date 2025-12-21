@@ -302,7 +302,7 @@ class ClaudeClient:
         
         Args:
             content: Text content to cache
-            cache_type: 'ephemeral' (5-min TTL) or 'ephemeral_1h' (1-hour TTL)
+            cache_type: 'ephemeral' (5-min TTL)
             
         Returns:
             Content block with cache_control
@@ -322,7 +322,7 @@ class ClaudeClient:
         max_tokens: int = 16384,
         temperature: float = 1.0,
         cache_system: bool = True,
-        cache_ttl: Literal["ephemeral", "ephemeral_1h"] = "ephemeral",
+        cache_ttl: Literal["ephemeral"] = "ephemeral",
     ) -> str:
         """
         Send a chat message to Claude.
@@ -330,7 +330,7 @@ class ClaudeClient:
         Best practices for quality results:
         - Don't artificially limit max_tokens; let Claude use what it needs
         - Always use system prompts with caching for repeated patterns
-        - Use 1-hour cache (ephemeral_1h) for stable system prompts
+        - Use ephemeral cache (5-min TTL) for system prompts
         
         Args:
             messages: List of message dicts with 'role' and 'content'
@@ -340,7 +340,7 @@ class ClaudeClient:
             max_tokens: Maximum tokens in response (default 16384, no artificial limits)
             temperature: Sampling temperature (0-1)
             cache_system: Whether to cache the system prompt
-            cache_ttl: Cache duration ('ephemeral' = 5min, 'ephemeral_1h' = 1hr)
+            cache_ttl: Cache duration ('ephemeral' = 5min)
             
         Returns:
             Response text from Claude

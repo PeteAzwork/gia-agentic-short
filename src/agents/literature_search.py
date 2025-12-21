@@ -111,9 +111,15 @@ class LiteratureSearchAgent(BaseAgent):
         """
         start_time = time.time()
         
-        # Extract hypothesis and questions
-        hypothesis_result = context.get("hypothesis_result", {})
-        structured_data = hypothesis_result.get("structured_data", {})
+        # Extract hypothesis and questions with defensive checks
+        hypothesis_result = context.get("hypothesis_result") or {}
+        logger.debug(f"hypothesis_result type: {type(hypothesis_result)}")
+        logger.debug(f"hypothesis_result keys: {hypothesis_result.keys() if isinstance(hypothesis_result, dict) else 'N/A'}")
+        
+        structured_data = hypothesis_result.get("structured_data") if isinstance(hypothesis_result, dict) else {}
+        structured_data = structured_data or {}
+        
+        logger.debug(f"structured_data: {structured_data}")
         
         # Get literature questions from hypothesis result or context
         literature_questions = (
@@ -125,6 +131,9 @@ class LiteratureSearchAgent(BaseAgent):
             structured_data.get("main_hypothesis") or
             context.get("main_hypothesis", "")
         )
+        
+        logger.debug(f"main_hypothesis: {main_hypothesis[:100] if main_hypothesis else 'None'}...")
+        logger.debug(f"literature_questions: {literature_questions}")
         
         research_overview = context.get("research_overview", "")
         
@@ -149,33 +158,18 @@ class LiteratureSearchAgent(BaseAgent):
                 context=context,
             )
             
-            # Step 2: Submit primary search to Edison
+            # Step 2: Search literature using Edison
             logger.info("Submitting literature search to Edison API...")
             primary_query = queries.get("primary_query", "")
             search_context = queries.get("search_context", "")
-            focus_areas = queries.get("focus_areas", [])
             
-            job_id = await self.edison_client.submit_literature_search(
+            # Use the new simplified Edison client API
+            literature_result = await self.edison_client.search_literature(
                 query=primary_query,
                 context=search_context,
-                max_papers=self.max_papers,
-                focus_areas=focus_areas,
             )
             
-            # Step 3: Wait for results
-            logger.info(f"Waiting for Edison results (job: {job_id}, timeout: {self.search_timeout}s)...")
-            
-            def progress_callback(status: str, elapsed: float, data: dict):
-                logger.info(f"Edison job {job_id}: {status} (elapsed: {elapsed:.0f}s)")
-            
-            literature_result = await self.edison_client.wait_for_result(
-                job_id=job_id,
-                timeout=self.search_timeout,
-                poll_interval=30,
-                callback=progress_callback,
-            )
-            
-            # Step 4: Check for errors
+            # Step 3: Check for errors
             if literature_result.status == JobStatus.FAILED:
                 return AgentResult(
                     agent_name=self.name,
@@ -187,19 +181,9 @@ class LiteratureSearchAgent(BaseAgent):
                     execution_time=time.time() - start_time,
                 )
             
-            if literature_result.status == JobStatus.TIMEOUT:
-                return AgentResult(
-                    agent_name=self.name,
-                    task_type=self.task_type,
-                    model_tier=self.model_tier,
-                    success=False,
-                    content="",
-                    error="Edison search timed out",
-                    execution_time=time.time() - start_time,
-                    structured_data={"job_id": job_id, "status": "timeout"},
-                )
+            # Step 4: Return results
+            logger.info(f"Edison search completed in {literature_result.processing_time:.1f}s with {len(literature_result.citations)} citations")
             
-            # Step 5: Return results
             return AgentResult(
                 agent_name=self.name,
                 task_type=self.task_type,
@@ -209,7 +193,6 @@ class LiteratureSearchAgent(BaseAgent):
                 tokens_used=queries.get("tokens_used", 0),
                 execution_time=time.time() - start_time,
                 structured_data={
-                    "job_id": job_id,
                     "primary_query": primary_query,
                     "supporting_queries": queries.get("supporting_queries", []),
                     "literature_result": literature_result.to_dict(),

@@ -181,7 +181,7 @@ class ResearchWorkflow:
                         logger.info("Step 1/4: Using cached Data Analyst result")
                     else:
                         data_result = await self.data_analyst.execute(context)
-                        if cache:
+                        if cache and data_result.success:
                             cache.save("data_analyst", data_result.to_dict(), context, project_id)
                         span.set_attribute("cached", False)
                     
@@ -213,7 +213,7 @@ class ResearchWorkflow:
                         logger.info("Step 2/4: Using cached Research Explorer result")
                     else:
                         research_result = await self.research_explorer.execute(context)
-                        if cache:
+                        if cache and research_result.success:
                             cache.save("research_explorer", research_result.to_dict(), context, project_id)
                         span.set_attribute("cached", False)
                     
@@ -245,7 +245,7 @@ class ResearchWorkflow:
                         logger.info("Step 3/4: Using cached Gap Analyst result")
                     else:
                         gap_result = await self.gap_analyst.execute(context)
-                        if cache:
+                        if cache and gap_result.success:
                             cache.save("gap_analyst", gap_result.to_dict(), context, project_id)
                         span.set_attribute("cached", False)
                     
@@ -277,7 +277,7 @@ class ResearchWorkflow:
                         logger.info("Step 4/4: Using cached Overview Generator result")
                     else:
                         overview_result = await self.overview_generator.execute(context)
-                        if cache:
+                        if cache and overview_result.success:
                             cache.save("overview_generator", overview_result.to_dict(), context, project_id)
                         span.set_attribute("cached", False)
                     
@@ -320,20 +320,42 @@ class ResearchWorkflow:
             return result
     
     def _result_from_cache(self, cached_data: dict) -> AgentResult:
-        """Reconstruct AgentResult from cached dictionary."""
+        """Reconstruct AgentResult from cached dictionary.
+        
+        Note: cache.load() returns the agent_result dict directly (not wrapped),
+        so cached_data IS the agent_result, not {agent_result: {...}}.
+        """
         from src.llm.claude_client import TaskType, ModelTier
         
+        # cached_data IS the agent_result (cache.load returns entry.agent_result directly)
+        agent_result = cached_data
+        
+        # Parse task_type and model_tier from cached values
+        task_type_str = agent_result.get("task_type", "data_analysis")
+        model_tier_str = agent_result.get("model_tier", "sonnet")
+        
+        # Convert strings to enums with fallbacks
+        try:
+            task_type = TaskType(task_type_str)
+        except ValueError:
+            task_type = TaskType.DATA_ANALYSIS
+        
+        try:
+            model_tier = ModelTier(model_tier_str)
+        except ValueError:
+            model_tier = ModelTier.SONNET
+        
         return AgentResult(
-            agent_name=cached_data.get("agent_name", "unknown"),
-            task_type=TaskType(cached_data.get("task_type", "data_analysis")),
-            model_tier=ModelTier(cached_data.get("model_tier", "sonnet")),
-            success=cached_data.get("success", False),
-            content=cached_data.get("content", ""),
-            structured_data=cached_data.get("structured_data", {}),
-            error=cached_data.get("error"),
-            tokens_used=cached_data.get("tokens_used", 0),
-            execution_time=cached_data.get("execution_time", 0.0),
-            timestamp=cached_data.get("timestamp", ""),
+            agent_name=agent_result.get("agent_name", "unknown"),
+            task_type=task_type,
+            model_tier=model_tier,
+            success=agent_result.get("success", False),
+            content=agent_result.get("content", ""),
+            structured_data=agent_result.get("structured_data", {}),
+            error=agent_result.get("error"),
+            tokens_used=agent_result.get("tokens_used", 0),
+            execution_time=agent_result.get("execution_time", 0.0),
+            timestamp=agent_result.get("timestamp", ""),
         )
     
     def _save_overview(self, project_path: Path, overview_result: AgentResult) -> Path:

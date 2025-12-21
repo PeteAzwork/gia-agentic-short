@@ -164,7 +164,7 @@ client = get_claude_client()
 response = client.chat(
     messages=[{"role": "user", "content": "Analyze..."}],
     system="You are an expert...",  # Cached
-    cache_ttl="ephemeral_1h"        # 1-hour cache
+    cache_ttl="ephemeral"          # 5-min cache
 )
 ```
 
@@ -256,7 +256,7 @@ class MyAgent(BaseAgent):
             task_type=config["task_type"],
             system_prompt=config["system_prompt"],
             client=client,
-            cache_ttl="ephemeral_1h",  # 1-hour cache
+            cache_ttl="ephemeral",  # 5-min cache
         )
     
     async def execute(self, context: dict) -> AgentResult:

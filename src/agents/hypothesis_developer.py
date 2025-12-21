@@ -236,6 +236,8 @@ Focus on what can actually be tested with the available data and methodology."""
     
     def _parse_hypothesis(self, response: str) -> dict:
         """Parse structured data from the hypothesis response."""
+        import re
+        
         data = {
             "main_hypothesis": None,
             "null_hypothesis": None,
@@ -244,48 +246,46 @@ Focus on what can actually be tested with the available data and methodology."""
             "literature_questions": [],
         }
         
-        lines = response.split("\n")
-        current_section = None
+        # Extract H1 (main hypothesis) - handles **H1 (Title):** format
+        h1_match = re.search(r'\*\*H1[^:]*:\*\*\s*(.+?)(?=\n\n|\n\*\*|$)', response, re.DOTALL)
+        if h1_match:
+            data["main_hypothesis"] = h1_match.group(1).strip()
         
-        for line in lines:
-            line_stripped = line.strip()
-            
-            # Detect main hypothesis
-            if line_stripped.startswith("**H1:**") or line_stripped.startswith("H1:"):
-                data["main_hypothesis"] = line_stripped.replace("**H1:**", "").replace("H1:", "").strip()
-            
-            # Detect null hypothesis
-            elif line_stripped.startswith("**H0") or line_stripped.startswith("H0"):
-                data["null_hypothesis"] = line_stripped.replace("**H0 (Null):**", "").replace("H0:", "").strip()
-            
-            # Detect alternative hypothesis
-            elif line_stripped.startswith("**H2") or line_stripped.startswith("H2"):
-                alt = line_stripped.replace("**H2 (Alternative):**", "").replace("H2:", "").strip()
-                if alt:
-                    data["alternative_hypotheses"].append(alt)
-            
-            # Section detection
-            if "Testable Predictions" in line:
-                current_section = "predictions"
-            elif "Literature Questions" in line:
-                current_section = "questions"
-            elif line.startswith("###"):
-                current_section = None
-            
-            # Collect list items
-            if line_stripped.startswith("- ") or line_stripped.startswith("* "):
-                item = line_stripped[2:].strip()
-                if current_section == "predictions" and item:
-                    data["testable_predictions"].append(item)
-                elif current_section == "questions" and item:
-                    data["literature_questions"].append(item)
-            
-            # Numbered list items
-            if current_section == "questions":
-                for i in range(1, 10):
-                    if line_stripped.startswith(f"{i}. "):
-                        item = line_stripped[3:].strip()
-                        if item:
-                            data["literature_questions"].append(item)
+        # Extract H0 (null hypothesis)
+        h0_match = re.search(r'\*\*H0[^:]*:\*\*\s*(.+?)(?=\n\n|\n\*\*|$)', response, re.DOTALL)
+        if h0_match:
+            data["null_hypothesis"] = h0_match.group(1).strip()
+        
+        # Extract alternative hypotheses (H2, H3, H4, H5, etc.)
+        alt_matches = re.findall(r'\*\*H([2-9])[^:]*:\*\*\s*(.+?)(?=\n\n|\n\*\*H|\n---|\n###|$)', response, re.DOTALL)
+        for _, content in alt_matches:
+            alt = content.strip()
+            if alt and len(alt) > 10:  # Filter out very short matches
+                data["alternative_hypotheses"].append(alt)
+        
+        # Extract testable predictions from tables or lists
+        pred_section = re.search(r'Testable Predictions.*?(?=\n\n\*\*|\n---|\n###|$)', response, re.DOTALL | re.IGNORECASE)
+        if pred_section:
+            pred_text = pred_section.group(0)
+            # Try to get P1.x predictions
+            p_matches = re.findall(r'P\d+\.\d+[:\s]+(.+?)(?=\||\n)', pred_text)
+            data["testable_predictions"].extend([p.strip() for p in p_matches if p.strip()])
+        
+        # Extract literature questions - handles **Question N:** format
+        question_matches = re.findall(
+            r'\*\*Question\s*(\d+)[^:]*:\*?\*?\s*(.+?)(?=\n\n\*\*Question|\n---|\n###|$)',
+            response, re.DOTALL | re.IGNORECASE
+        )
+        for _, content in question_matches:
+            # Get the first line (the actual question) before *Purpose* etc.
+            question_line = content.split('\n')[0].strip()
+            if question_line:
+                data["literature_questions"].append(question_line)
+        
+        # Also capture any search terms or key papers mentioned
+        search_needed = re.findall(r'\[SEARCH_NEEDED:\s*"([^"]+)"\]', response)
+        for term in search_needed:
+            if term not in data["literature_questions"]:
+                data["literature_questions"].append(term)
         
         return data
