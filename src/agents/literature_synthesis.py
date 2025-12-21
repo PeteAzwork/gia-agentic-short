@@ -111,7 +111,7 @@ class LiteratureSynthesisAgent(BaseAgent):
     Uses Sonnet 4.5 for document synthesis.
     """
     
-    def __init__(self, client=None):
+    def __init__(self, client: Optional[Any] = None):
         super().__init__(
             name="LiteratureSynthesizer",
             task_type=TaskType.DOCUMENT_CREATION,  # Uses Sonnet

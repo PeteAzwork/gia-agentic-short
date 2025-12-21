@@ -15,7 +15,7 @@ import os
 import json
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 from .base import BaseAgent, AgentResult
 from src.llm.claude_client import TaskType
@@ -52,7 +52,7 @@ class DataAnalystAgent(BaseAgent):
     Uses Haiku 4.5 for fast processing of data classification tasks.
     """
     
-    def __init__(self, client=None):
+    def __init__(self, client: Optional[Any] = None):
         super().__init__(
             name="DataAnalyst",
             task_type=TaskType.DATA_EXTRACTION,  # Uses Haiku

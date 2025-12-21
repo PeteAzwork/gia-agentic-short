@@ -13,7 +13,7 @@ for more information see: https://giatenica.com
 
 import time
 import json
-from typing import Optional
+from typing import Optional, Any
 
 from .base import BaseAgent, AgentResult
 from src.llm.claude_client import TaskType
@@ -57,7 +57,7 @@ class ResearchExplorerAgent(BaseAgent):
     Uses Sonnet 4.5 for comprehensive research analysis.
     """
     
-    def __init__(self, client=None):
+    def __init__(self, client: Optional[Any] = None):
         super().__init__(
             name="ResearchExplorer",
             task_type=TaskType.DATA_ANALYSIS,  # Uses Sonnet

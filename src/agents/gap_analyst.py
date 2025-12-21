@@ -13,7 +13,7 @@ for more information see: https://giatenica.com
 
 import time
 import json
-from typing import Optional
+from typing import Optional, Any
 
 from .base import BaseAgent, AgentResult
 from src.llm.claude_client import TaskType
@@ -75,7 +75,7 @@ class GapAnalysisAgent(BaseAgent):
     Uses Opus 4.5 for complex reasoning about research completeness.
     """
     
-    def __init__(self, client=None):
+    def __init__(self, client: Optional[Any] = None):
         super().__init__(
             name="GapAnalyst",
             task_type=TaskType.COMPLEX_REASONING,  # Uses Opus

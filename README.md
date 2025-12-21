@@ -44,29 +44,38 @@ All agents inherit from `BaseAgent` which provides:
 
 ### Phase 1 Agents (Initial Analysis)
 
-| Agent | Task Type | Model | Purpose |
-|-------|-----------|-------|---------|
-| DataAnalyst | Data Extraction | Haiku | Analyze datasets and generate statistics |
-| ResearchExplorer | Data Analysis | Sonnet | Analyze what the user has provided |
-| GapAnalyst | Complex Reasoning | Opus | Identify missing elements for research |
-| OverviewGenerator | Document Creation | Sonnet | Generate research overview documents |
+| Agent | ID | Task Type | Model | Purpose |
+|-------|-----|-----------|-------|---------|
+| DataAnalyst | A1 | Data Extraction | Haiku | Analyze datasets and generate statistics |
+| ResearchExplorer | A2 | Data Analysis | Sonnet | Analyze what the user has provided |
+| GapAnalyst | A3 | Complex Reasoning | Opus | Identify missing elements for research |
+| OverviewGenerator | A4 | Document Creation | Sonnet | Generate research overview documents |
 
 ### Phase 2 Agents (Literature and Planning)
 
-| Agent | Task Type | Model | Purpose |
-|-------|-----------|-------|---------|
-| HypothesisDeveloper | Complex Reasoning | Opus | Formulate testable hypotheses |
-| LiteratureSearcher | Data Analysis | Sonnet | Search literature via Edison API |
-| LiteratureSynthesizer | Document Creation | Sonnet | Synthesize literature and create .bib |
-| PaperStructurer | Document Creation | Sonnet | Create LaTeX paper structure |
-| ProjectPlanner | Complex Reasoning | Opus | Create detailed project plan |
+| Agent | ID | Task Type | Model | Purpose |
+|-------|-----|-----------|-------|---------|
+| HypothesisDeveloper | A5 | Complex Reasoning | Opus | Formulate testable hypotheses |
+| LiteratureSearcher | A6 | Data Analysis | Sonnet | Search literature via Edison API |
+| LiteratureSynthesizer | A7 | Document Creation | Sonnet | Synthesize literature and create .bib |
+| PaperStructurer | A8 | Document Creation | Sonnet | Create LaTeX paper structure |
+| ProjectPlanner | A9 | Complex Reasoning | Opus | Create detailed project plan |
 
 ### Gap Resolution Agents
 
-| Agent | Task Type | Model | Purpose |
-|-------|-----------|-------|---------|
-| GapResolver | Coding | Sonnet | Generate code to resolve data gaps |
-| OverviewUpdater | Complex Reasoning | Opus | Synthesize findings into updated overview |
+| Agent | ID | Task Type | Model | Purpose |
+|-------|-----|-----------|-------|---------|
+| GapResolver | A10 | Coding | Sonnet | Generate code to resolve data gaps |
+| OverviewUpdater | A11 | Complex Reasoning | Opus | Synthesize findings into updated overview |
+
+### Quality Assurance Agents
+
+| Agent | ID | Task Type | Model | Purpose |
+|-------|-----|-----------|-------|---------|
+| CriticalReviewer | A12 | Complex Reasoning | Opus | Review outputs for quality with extended thinking |
+| StyleEnforcer | A13 | Data Extraction | Haiku | Check banned words and style compliance |
+| ConsistencyChecker | A14 | Data Analysis | Sonnet | Verify cross-document consistency |
+| ReadinessAssessor | A15 | Data Extraction | Haiku | Assess project readiness and track time |
 
 ## Setup
 
@@ -213,34 +222,46 @@ thinking, response = client.chat_with_thinking(
 ```
 gia-agentic-short/
 ├── src/
-│   ├── agents/
+│   ├── agents/                 # 15 specialized agents (A1-A15)
 │   │   ├── base.py              # BaseAgent with best practices
 │   │   ├── best_practices.py    # Standards for all agents
+│   │   ├── registry.py          # Agent registry and capabilities
 │   │   ├── cache.py             # Workflow stage caching
+│   │   ├── feedback.py          # Feedback and revision system
+│   │   ├── orchestrator.py      # Advanced workflow orchestration
 │   │   ├── workflow.py          # Phase 1 research workflow
 │   │   ├── gap_resolution_workflow.py  # Gap resolution workflow
 │   │   ├── literature_workflow.py  # Phase 2 literature workflow
-│   │   ├── data_analyst.py
-│   │   ├── research_explorer.py
-│   │   ├── gap_analyst.py
-│   │   ├── gap_resolver.py
-│   │   ├── overview_generator.py
-│   │   ├── hypothesis_developer.py
-│   │   ├── literature_search.py
-│   │   ├── literature_synthesis.py
-│   │   ├── paper_structure.py
-│   │   └── project_planner.py
+│   │   ├── data_analyst.py      # A1: Data extraction
+│   │   ├── research_explorer.py # A2: Project analysis
+│   │   ├── gap_analyst.py       # A3: Gap identification
+│   │   ├── overview_generator.py # A4: Overview generation
+│   │   ├── hypothesis_developer.py # A5: Hypothesis development
+│   │   ├── literature_search.py # A6: Literature search
+│   │   ├── literature_synthesis.py # A7: Literature synthesis
+│   │   ├── paper_structure.py   # A8: Paper structuring
+│   │   ├── project_planner.py   # A9: Project planning
+│   │   ├── gap_resolver.py      # A10: Gap resolution
+│   │   ├── critical_review.py   # A12: Quality review
+│   │   ├── style_enforcer.py    # A13: Style enforcement
+│   │   ├── consistency_checker.py # A14: Consistency checking
+│   │   └── readiness_assessor.py # A15: Readiness assessment
 │   ├── llm/
 │   │   ├── claude_client.py     # Claude API with caching & batching
 │   │   └── edison_client.py     # Edison Scientific API client
 │   ├── utils/
-│   │   └── validation.py        # Path and input validation
+│   │   ├── validation.py        # Path and input validation
+│   │   ├── time_tracking.py     # Execution time tracking
+│   │   ├── readiness_scoring.py # Project readiness scoring
+│   │   ├── consistency_validation.py # Cross-document consistency
+│   │   └── style_validation.py  # Style guide enforcement
 │   └── tracing.py               # OpenTelemetry setup
-├── tests/                       # pytest test suite (97+ tests)
+├── tests/                       # pytest test suite (170+ tests)
 ├── evaluation/                  # Test queries and metrics
 ├── user-input/                  # Research projects
 ├── run_workflow.py              # Phase 1 workflow runner
 ├── run_gap_resolution.py        # Gap resolution runner
+├── run_literature_workflow.py   # Phase 2 workflow runner
 └── research_intake_server.py    # Web intake form server
 ```
 
@@ -322,6 +343,70 @@ class MyAgent(BaseAgent):
 - **No Code Execution**: Agents cannot execute arbitrary code
 - **Input Sanitization**: All user inputs are validated before processing
 - **API Key Protection**: Keys loaded from environment, never logged
+
+## Troubleshooting
+
+### Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| `ANTHROPIC_API_KEY not set` | Add key to `.env` file or environment |
+| `Rate limit exceeded` | Retry logic handles automatically; wait if persistent |
+| `Cache validation failed` | Delete `.workflow_cache/` folder and re-run |
+| `Edison API timeout` | Check network; API has 30s timeout |
+| `Path validation error` | Ensure project folder exists and has correct structure |
+
+### Debug Mode
+
+Enable detailed logging:
+
+```bash
+# Set log level
+export LOG_LEVEL=DEBUG
+
+# Enable tracing
+export ENABLE_TRACING=true
+export OTLP_ENDPOINT=http://localhost:4318/v1/traces
+```
+
+### Reset Workflow State
+
+```bash
+# Clear cached workflow stages
+rm -rf user-input/your-project/.workflow_cache/
+
+# Regenerate all outputs
+.venv/bin/python run_workflow.py user-input/your-project
+```
+
+## Contributing
+
+### Development Setup
+
+```bash
+# Clone and install
+git clone https://github.com/giatenica/gia-agentic-short.git
+cd gia-agentic-short
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Adding New Agents
+
+1. Create agent file in `src/agents/`
+2. Inherit from `BaseAgent`
+3. Register in `src/agents/registry.py`
+4. Add tests in `tests/test_*.py`
+5. Update workflow if needed
+
+### Code Standards
+
+- Type hints on all function signatures
+- Docstrings for public methods
+- No bare `except:` clauses (use specific exceptions)
+- Follow existing naming conventions
+- Run tests before committing: `.venv/bin/python -m pytest tests/ -v -m unit`
 
 ## License
 

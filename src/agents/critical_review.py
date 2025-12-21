@@ -202,7 +202,7 @@ class CriticalReviewAgent(BaseAgent):
     Produces structured feedback that can trigger revision loops.
     """
     
-    def __init__(self, client=None):
+    def __init__(self, client: Optional[Any] = None):
         super().__init__(
             name="CriticalReviewer",
             task_type=TaskType.COMPLEX_REASONING,  # Uses Opus

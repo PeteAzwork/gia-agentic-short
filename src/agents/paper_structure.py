@@ -93,7 +93,7 @@ class PaperStructureAgent(BaseAgent):
     Uses Sonnet 4.5 for document generation.
     """
     
-    def __init__(self, client=None):
+    def __init__(self, client: Optional[Any] = None):
         super().__init__(
             name="PaperStructurer",
             task_type=TaskType.DOCUMENT_CREATION,  # Uses Sonnet

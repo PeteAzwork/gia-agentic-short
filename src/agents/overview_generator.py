@@ -13,7 +13,7 @@ for more information see: https://giatenica.com
 
 import time
 import json
-from typing import Optional
+from typing import Optional, Any
 from datetime import datetime
 
 from .base import BaseAgent, AgentResult
@@ -84,7 +84,7 @@ class OverviewGeneratorAgent(BaseAgent):
     Uses Sonnet 4.5 for document generation.
     """
     
-    def __init__(self, client=None):
+    def __init__(self, client: Optional[Any] = None):
         super().__init__(
             name="OverviewGenerator",
             task_type=TaskType.DOCUMENT_CREATION,  # Uses Sonnet

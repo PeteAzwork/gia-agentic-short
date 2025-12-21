@@ -553,7 +553,7 @@ def check_literature_readiness(project_folder: str) -> Dict[str, Any]:
                 with open(bib_files[0], 'r') as f:
                     content = f.read()
                 result["bibtex_entries"] = len(re.findall(r'@\w+\{', content))
-            except:
+            except (IOError, OSError, UnicodeDecodeError):
                 pass
         
         # Check for summary
@@ -896,7 +896,7 @@ def assess_project_readiness(project_folder: str) -> ReadinessReport:
             with open(project_json_path, 'r') as f:
                 data = json.load(f)
             project_id = data.get("id", "unknown")
-        except:
+        except (json.JSONDecodeError, IOError, OSError):
             pass
     
     # Load existing report or create new one
@@ -905,7 +905,7 @@ def assess_project_readiness(project_folder: str) -> ReadinessReport:
         try:
             with open(report_path, 'r') as f:
                 report = ReadinessReport.from_dict(json.load(f))
-        except:
+        except (json.JSONDecodeError, IOError, OSError):
             report = initialize_readiness_report(project_folder, project_id)
     else:
         report = initialize_readiness_report(project_folder, project_id)

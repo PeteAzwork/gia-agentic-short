@@ -142,7 +142,7 @@ class ProjectPlannerAgent(BaseAgent):
     Uses Opus 4.5 for complex planning and reasoning.
     """
     
-    def __init__(self, client=None):
+    def __init__(self, client: Optional[Any] = None):
         super().__init__(
             name="ProjectPlanner",
             task_type=TaskType.COMPLEX_REASONING,  # Uses Opus

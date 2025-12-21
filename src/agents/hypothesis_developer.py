@@ -14,7 +14,7 @@ for more information see: https://giatenica.com
 
 import time
 import json
-from typing import Optional
+from typing import Optional, Any
 from pathlib import Path
 
 from .base import BaseAgent, AgentResult
@@ -102,7 +102,7 @@ class HypothesisDevelopmentAgent(BaseAgent):
     Uses Opus 4.5 for complex reasoning about hypothesis development.
     """
     
-    def __init__(self, client=None):
+    def __init__(self, client: Optional[Any] = None):
         super().__init__(
             name="HypothesisDeveloper",
             task_type=TaskType.COMPLEX_REASONING,  # Uses Opus

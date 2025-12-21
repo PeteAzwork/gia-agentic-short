@@ -660,7 +660,7 @@ def initialize_tracking(project_folder: str) -> TimeTrackingReport:
                 with open(project_json_path, 'r') as f:
                     project_data = json.load(f)
                 project_id = project_data.get("id", "unknown")
-            except:
+            except (json.JSONDecodeError, IOError, OSError):
                 pass
         return TimeTrackingReport(project_id=project_id, project_folder=project_folder)
     
@@ -672,7 +672,7 @@ def initialize_tracking(project_folder: str) -> TimeTrackingReport:
             with open(project_json_path, 'r') as f:
                 project_data = json.load(f)
             project_id = project_data.get("id", "unknown")
-        except:
+        except (json.JSONDecodeError, IOError, OSError):
             pass
     
     with open(plan_path, 'r') as f:
