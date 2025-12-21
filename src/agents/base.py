@@ -110,34 +110,27 @@ class BaseAgent(ABC):
         import time
         start_time = time.time()
         
+        # Format message as list for Claude API
+        messages = [{"role": "user", "content": user_message}]
+        
         try:
             if use_thinking:
-                response = self.client.chat_with_thinking(
-                    user_message=user_message,
-                    system_prompt=self.system_prompt,
-                    task=self.task_type,
+                thinking, response = self.client.chat_with_thinking(
+                    messages=messages,
+                    system=self.system_prompt,
+                    model=self.model_tier,
                 )
+                content = response
+                # Token count from usage tracking
+                tokens = self.client.usage.output_tokens
             else:
                 response = self.client.chat(
-                    user_message=user_message,
-                    system_prompt=self.system_prompt,
+                    messages=messages,
+                    system=self.system_prompt,
                     task=self.task_type,
                 )
-            
-            # Extract content from response
-            if hasattr(response, 'content'):
-                content = ""
-                for block in response.content:
-                    if hasattr(block, 'text'):
-                        content += block.text
-            else:
-                content = str(response)
-            
-            # Get token usage
-            tokens = 0
-            if hasattr(response, 'usage'):
-                tokens = getattr(response.usage, 'input_tokens', 0) + \
-                         getattr(response.usage, 'output_tokens', 0)
+                content = response  # chat() returns string directly
+                tokens = self.client.usage.output_tokens
             
             elapsed = time.time() - start_time
             logger.debug(f"{self.name} completed in {elapsed:.2f}s, {tokens} tokens")

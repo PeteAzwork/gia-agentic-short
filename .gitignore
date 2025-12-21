@@ -52,3 +52,4 @@ logs/
 
 # Ignore specific files
 .github/copilot-instructions.md
+/user-input

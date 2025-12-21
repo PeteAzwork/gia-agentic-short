@@ -349,7 +349,8 @@ class ClaudeClient:
         if model:
             model_id = self.get_model_id(model)
         elif task:
-            model_id = self.get_model_for_task(task)
+            tier = self.get_model_for_task(task)
+            model_id = self.get_model_id(tier)
         else:
             model_id = self.get_model_id()
         
@@ -396,7 +397,8 @@ class ClaudeClient:
         if model:
             model_id = self.get_model_id(model)
         elif task:
-            model_id = self.get_model_for_task(task)
+            tier = self.get_model_for_task(task)
+            model_id = self.get_model_id(tier)
         else:
             model_id = self.get_model_id()
         
@@ -479,21 +481,32 @@ class ClaudeClient:
         if interleaved:
             extra_headers["anthropic-beta"] = "interleaved-thinking-2025-05-14"
         
-        if extra_headers:
-            response = self.client.messages.create(**kwargs, extra_headers=extra_headers)
-        else:
-            response = self.client.messages.create(**kwargs)
-        
-        self.usage.add(response.usage.model_dump())
-        
+        # Use streaming for extended thinking to handle long operations (>10 min)
+        # Anthropic requires streaming for operations that may take longer
         thinking_text = ""
         response_text = ""
+        total_input_tokens = 0
+        total_output_tokens = 0
         
-        for block in response.content:
-            if block.type == "thinking":
-                thinking_text = block.thinking
-            elif block.type == "text":
-                response_text = block.text
+        with self.client.messages.stream(**kwargs, extra_headers=extra_headers if extra_headers else None) as stream:
+            for event in stream:
+                if hasattr(event, 'type'):
+                    if event.type == 'content_block_start':
+                        # Handle start of thinking or text blocks
+                        pass
+                    elif event.type == 'content_block_delta':
+                        if hasattr(event.delta, 'thinking'):
+                            thinking_text += event.delta.thinking
+                        elif hasattr(event.delta, 'text'):
+                            response_text += event.delta.text
+                    elif event.type == 'message_delta':
+                        if hasattr(event, 'usage') and event.usage:
+                            total_output_tokens = getattr(event.usage, 'output_tokens', 0)
+            
+            # Get final message for usage stats
+            final_message = stream.get_final_message()
+            if final_message and final_message.usage:
+                self.usage.add(final_message.usage.model_dump())
         
         return thinking_text, response_text
     

@@ -21,6 +21,7 @@ from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 # Service configuration
 SERVICE_NAME_VALUE = "gia-research-agents"
 OTLP_ENDPOINT = os.getenv("OTLP_ENDPOINT", "http://localhost:4318/v1/traces")
+ENABLE_TRACING = os.getenv("ENABLE_TRACING", "false").lower() == "true"
 
 
 def setup_tracing(service_name: str = SERVICE_NAME_VALUE) -> trace.Tracer:
@@ -80,9 +81,13 @@ def init_tracing() -> trace.Tracer:
     Initialize tracing if not already done.
     
     Returns:
-        The global tracer instance
+        The global tracer instance (or NoOp tracer if disabled)
     """
     global _tracer
     if _tracer is None:
-        _tracer = setup_tracing()
+        if ENABLE_TRACING:
+            _tracer = setup_tracing()
+        else:
+            # Return NoOp tracer when tracing is disabled
+            _tracer = trace.get_tracer(SERVICE_NAME_VALUE)
     return _tracer

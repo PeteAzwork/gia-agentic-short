@@ -287,7 +287,11 @@ Provide a comprehensive data assessment for this research project."""
         for col in df.columns:
             if df[col].dtype == 'object':
                 try:
-                    pd.to_datetime(df[col].head(100))
+                    # Suppress format inference warning by using infer_datetime_format
+                    import warnings
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", UserWarning)
+                        pd.to_datetime(df[col].head(100), format='mixed')
                     date_cols.append(col)
                 except:
                     pass

@@ -33,6 +33,7 @@ from src.agents.research_explorer import ResearchExplorerAgent
 from src.agents.gap_analyst import GapAnalysisAgent
 from src.agents.overview_generator import OverviewGeneratorAgent
 from src.agents.base import AgentResult
+from src.agents.cache import WorkflowCache
 from src.tracing import init_tracing, get_tracer
 from loguru import logger
 
@@ -84,14 +85,18 @@ class ResearchWorkflow:
     6. Save results to project folder
     """
     
-    def __init__(self, client: Optional[ClaudeClient] = None):
+    def __init__(self, client: Optional[ClaudeClient] = None, use_cache: bool = True, cache_max_age_hours: int = 24):
         """
         Initialize workflow with shared Claude client.
         
         Args:
             client: Optional shared ClaudeClient (creates new if not provided)
+            use_cache: Whether to use stage caching (default: True)
+            cache_max_age_hours: Maximum age of cache entries in hours (default: 24)
         """
         self.client = client or ClaudeClient()
+        self.use_cache = use_cache
+        self.cache_max_age_hours = cache_max_age_hours
         
         # Initialize tracing
         init_tracing()
@@ -103,7 +108,7 @@ class ResearchWorkflow:
         self.gap_analyst = GapAnalysisAgent(client=self.client)
         self.overview_generator = OverviewGeneratorAgent(client=self.client)
         
-        logger.info("Research workflow initialized with 4 agents")
+        logger.info(f"Research workflow initialized with 4 agents (cache={'enabled' if use_cache else 'disabled'})")
     
     async def run(self, project_folder: str) -> WorkflowResult:
         """
@@ -141,6 +146,15 @@ class ResearchWorkflow:
             workflow_span.set_attribute("project_id", project_id)
             logger.info(f"Starting workflow for project {project_id}")
             
+            # Initialize cache if enabled
+            cache = None
+            if self.use_cache:
+                cache = WorkflowCache(project_folder, max_age_hours=self.cache_max_age_hours)
+                cache_status = cache.get_status()
+                cached_stages = [s for s, st in cache_status.items() if st.get("cached") and st.get("success")]
+                if cached_stages:
+                    logger.info(f"Cache status: {len(cached_stages)} stages cached: {cached_stages}")
+            
             result = WorkflowResult(
                 success=True,
                 project_id=project_id,
@@ -159,7 +173,18 @@ class ResearchWorkflow:
                 span.set_attribute("agent", "DataAnalyst")
                 span.set_attribute("model_tier", "haiku")
                 try:
-                    data_result = await self.data_analyst.execute(context)
+                    # Check cache first
+                    if cache and cache.has_valid_cache("data_analyst", context):
+                        cached_data = cache.load("data_analyst")
+                        data_result = self._result_from_cache(cached_data)
+                        span.set_attribute("cached", True)
+                        logger.info("Step 1/4: Using cached Data Analyst result")
+                    else:
+                        data_result = await self.data_analyst.execute(context)
+                        if cache:
+                            cache.save("data_analyst", data_result.to_dict(), context, project_id)
+                        span.set_attribute("cached", False)
+                    
                     result.data_analysis = data_result
                     result.total_tokens += data_result.tokens_used
                     context["data_analysis"] = data_result.to_dict()
@@ -180,7 +205,18 @@ class ResearchWorkflow:
                 span.set_attribute("agent", "ResearchExplorer")
                 span.set_attribute("model_tier", "sonnet")
                 try:
-                    research_result = await self.research_explorer.execute(context)
+                    # Check cache first
+                    if cache and cache.has_valid_cache("research_explorer", context):
+                        cached_data = cache.load("research_explorer")
+                        research_result = self._result_from_cache(cached_data)
+                        span.set_attribute("cached", True)
+                        logger.info("Step 2/4: Using cached Research Explorer result")
+                    else:
+                        research_result = await self.research_explorer.execute(context)
+                        if cache:
+                            cache.save("research_explorer", research_result.to_dict(), context, project_id)
+                        span.set_attribute("cached", False)
+                    
                     result.research_analysis = research_result
                     result.total_tokens += research_result.tokens_used
                     context["research_analysis"] = research_result.to_dict()
@@ -201,7 +237,18 @@ class ResearchWorkflow:
                 span.set_attribute("agent", "GapAnalyst")
                 span.set_attribute("model_tier", "opus")
                 try:
-                    gap_result = await self.gap_analyst.execute(context)
+                    # Check cache first
+                    if cache and cache.has_valid_cache("gap_analyst", context):
+                        cached_data = cache.load("gap_analyst")
+                        gap_result = self._result_from_cache(cached_data)
+                        span.set_attribute("cached", True)
+                        logger.info("Step 3/4: Using cached Gap Analyst result")
+                    else:
+                        gap_result = await self.gap_analyst.execute(context)
+                        if cache:
+                            cache.save("gap_analyst", gap_result.to_dict(), context, project_id)
+                        span.set_attribute("cached", False)
+                    
                     result.gap_analysis = gap_result
                     result.total_tokens += gap_result.tokens_used
                     context["gap_analysis"] = gap_result.to_dict()
@@ -222,7 +269,18 @@ class ResearchWorkflow:
                 span.set_attribute("agent", "OverviewGenerator")
                 span.set_attribute("model_tier", "sonnet")
                 try:
-                    overview_result = await self.overview_generator.execute(context)
+                    # Check cache first
+                    if cache and cache.has_valid_cache("overview_generator", context):
+                        cached_data = cache.load("overview_generator")
+                        overview_result = self._result_from_cache(cached_data)
+                        span.set_attribute("cached", True)
+                        logger.info("Step 4/4: Using cached Overview Generator result")
+                    else:
+                        overview_result = await self.overview_generator.execute(context)
+                        if cache:
+                            cache.save("overview_generator", overview_result.to_dict(), context, project_id)
+                        span.set_attribute("cached", False)
+                    
                     result.overview = overview_result
                     result.total_tokens += overview_result.tokens_used
                     span.set_attribute("tokens_used", overview_result.tokens_used)
@@ -260,6 +318,23 @@ class ResearchWorkflow:
             )
             
             return result
+    
+    def _result_from_cache(self, cached_data: dict) -> AgentResult:
+        """Reconstruct AgentResult from cached dictionary."""
+        from src.llm.claude_client import TaskType, ModelTier
+        
+        return AgentResult(
+            agent_name=cached_data.get("agent_name", "unknown"),
+            task_type=TaskType(cached_data.get("task_type", "data_analysis")),
+            model_tier=ModelTier(cached_data.get("model_tier", "sonnet")),
+            success=cached_data.get("success", False),
+            content=cached_data.get("content", ""),
+            structured_data=cached_data.get("structured_data", {}),
+            error=cached_data.get("error"),
+            tokens_used=cached_data.get("tokens_used", 0),
+            execution_time=cached_data.get("execution_time", 0.0),
+            timestamp=cached_data.get("timestamp", ""),
+        )
     
     def _save_overview(self, project_path: Path, overview_result: AgentResult) -> Path:
         """Save the generated overview to the project folder."""
