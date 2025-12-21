@@ -13,12 +13,8 @@ for more information see: https://giatenica.com
 """
 
 import os
-import json
-import asyncio
 from typing import Optional
-from datetime import datetime
-from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import anthropic
 from dotenv import load_dotenv
