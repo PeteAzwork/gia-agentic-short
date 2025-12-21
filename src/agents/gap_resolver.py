@@ -508,9 +508,10 @@ Generate the complete Python code:"""
         
         resolution.code_generated = code
         
-        # Execute code
+        # Execute code from workspace root (not project folder) since paths are relative to workspace
+        # The data_paths provided to the LLM are relative to the workspace root
         logger.debug(f"Executing code for gap {resolution.gap_id}...")
-        exec_result = self.executor.execute(code, working_dir=project_folder)
+        exec_result = self.executor.execute(code, working_dir=None)  # Use workspace root
         resolution.execution_result = exec_result
         
         if not exec_result.success:
