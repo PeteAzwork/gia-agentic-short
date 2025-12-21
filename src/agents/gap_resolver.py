@@ -644,7 +644,7 @@ class OverviewUpdaterAgent(BaseAgent):
         
         prompt = f"""Create an updated RESEARCH_OVERVIEW.md incorporating the gap resolution findings.
 
-ORIGINAL RESEARCH OVERVIEW:
+ORIGINAL RESEARCH OVERVIEW (802 lines, you MUST preserve its full structure):
 {research_overview}
 
 GAP RESOLUTION FINDINGS:
@@ -658,25 +658,44 @@ RESOLVED GAPS: {gap_resolutions.get('resolved_count', 0)} of {gap_resolutions.ge
 PROJECT DATA:
 {json.dumps(project_data, indent=2)[:2000]}
 
-Create the complete updated RESEARCH_OVERVIEW.md document.
+CRITICAL INSTRUCTIONS:
+You MUST output the COMPLETE updated document - all ~800 lines with updates incorporated.
+The original document has these sections that MUST ALL appear in your output:
+- YAML frontmatter
+- Executive Summary  
+- Research Design (Research Question, Hypothesis, Scope)
+- Data Status (with updated findings)
+- Gap Analysis (with resolved status updates)
+- Actionable Recommendations
+- Success Metrics
+- Appendices (Data Profile Summary, Key File Locations, Technical Notes)
 
-Requirements:
-1. Update the YAML frontmatter with new completeness_score and generated_at
-2. Update the "Ready for Literature Review" status if appropriate
-3. In the Data Status section, incorporate actual findings from code execution
-4. Update the Gap Analysis section to mark resolved gaps
+DO NOT truncate or summarize. DO NOT skip sections. Output the ENTIRE document.
+
+Updates to make:
+1. Update YAML frontmatter with new completeness_score and generated_at timestamp
+2. Update "Ready for Literature Review" status if appropriate
+3. In Data Status section, incorporate actual findings from code execution (specific numbers)
+4. Update Gap Analysis section to mark resolved gaps with ✓
 5. Update Action Items to reflect completed tasks
-6. Add a new "Gap Resolution Findings" section after Data Status
-7. Preserve all other sections with minimal changes
+6. Add a "Gap Resolution Findings" subsection after Executive Summary
+7. Preserve ALL other content with minimal changes
 8. Be specific about data findings (actual numbers, date ranges, etc.)
 
-Output the complete markdown document."""
+Begin output with the YAML frontmatter (---) and continue until the very end of the document."""
         
         # Retry loop for API overload errors
         last_error = None
         for attempt in range(max_retries):
             try:
-                response, tokens = await self._call_claude(prompt, use_thinking=True)
+                # Use higher max_tokens for long document synthesis
+                # The original overview is ~10k tokens, we need room for additions
+                response, tokens = await self._call_claude(
+                    prompt, 
+                    use_thinking=True,
+                    max_tokens=48000,  # Increased for full document synthesis
+                    budget_tokens=16000,
+                )
                 
                 # Extract the markdown content (remove any preamble)
                 updated_overview = self._extract_markdown(response)

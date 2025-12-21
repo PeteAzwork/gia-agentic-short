@@ -96,6 +96,8 @@ class BaseAgent(ABC):
         self,
         user_message: str,
         use_thinking: bool = False,
+        max_tokens: int = 32000,
+        budget_tokens: int = 16000,
     ) -> tuple[str, int]:
         """
         Call Claude API with the agent's configuration.
@@ -103,6 +105,8 @@ class BaseAgent(ABC):
         Args:
             user_message: The user message to send
             use_thinking: Whether to use extended thinking mode
+            max_tokens: Maximum output tokens (used with thinking mode)
+            budget_tokens: Token budget for extended thinking
             
         Returns:
             Tuple of (response content, tokens used)
@@ -119,6 +123,8 @@ class BaseAgent(ABC):
                     messages=messages,
                     system=self.system_prompt,
                     model=self.model_tier,
+                    max_tokens=max_tokens,
+                    budget_tokens=budget_tokens,
                 )
                 content = response
                 # Token count from usage tracking
