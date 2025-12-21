@@ -6,17 +6,17 @@
     <title>Research Project Intake | Gia Tenica</title>
     <style>
         :root {
-            --primary: #2563eb;
-            --primary-dark: #1d4ed8;
-            --secondary: #64748b;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --danger: #ef4444;
-            --bg: #f8fafc;
+            --primary: #1a1a1a;
+            --primary-dark: #000000;
+            --secondary: #666666;
+            --success: #2d5016;
+            --warning: #8b6914;
+            --danger: #8b1414;
+            --bg: #fafafa;
             --card-bg: #ffffff;
-            --text: #1e293b;
-            --text-muted: #64748b;
-            --border: #e2e8f0;
+            --text: #1a1a1a;
+            --text-muted: #555555;
+            --border: #e0e0e0;
         }
         
         * {
@@ -26,10 +26,10 @@
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-family: 'Times New Roman', Times, Georgia, serif;
             background: var(--bg);
             color: var(--text);
-            line-height: 1.6;
+            line-height: 1.7;
             min-height: 100vh;
         }
         
@@ -60,8 +60,8 @@
         
         .form-card {
             background: var(--card-bg);
-            border-radius: 12px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border-radius: 0;
+            border: 1px solid var(--border);
             padding: 2rem;
             margin-bottom: 1.5rem;
         }
@@ -75,19 +75,14 @@
         }
         
         .section-title {
-            font-size: 1.125rem;
+            font-size: 1rem;
             font-weight: 600;
             color: var(--text);
             margin-bottom: 1rem;
             padding-bottom: 0.5rem;
             border-bottom: 1px solid var(--border);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        
-        .section-title .icon {
-            font-size: 1.25rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
         
         .form-group {
@@ -122,13 +117,14 @@
         select,
         textarea {
             width: 100%;
-            padding: 0.75rem 1rem;
-            font-size: 1rem;
+            padding: 0.625rem 0.75rem;
+            font-size: 0.9375rem;
+            font-family: 'Times New Roman', Times, Georgia, serif;
             border: 1px solid var(--border);
-            border-radius: 8px;
+            border-radius: 0;
             background: var(--card-bg);
             color: var(--text);
-            transition: border-color 0.2s, box-shadow 0.2s;
+            transition: border-color 0.2s;
         }
         
         input:focus,
@@ -136,7 +132,6 @@
         textarea:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
         }
         
         textarea {
@@ -185,31 +180,29 @@
         }
         
         .file-upload {
-            border: 2px dashed var(--border);
-            border-radius: 8px;
-            padding: 2rem;
+            border: 1px dashed var(--border);
+            border-radius: 0;
+            padding: 1.5rem;
             text-align: center;
             cursor: pointer;
-            transition: border-color 0.2s, background 0.2s;
+            transition: border-color 0.2s;
         }
         
         .file-upload:hover {
             border-color: var(--primary);
-            background: rgba(37, 99, 235, 0.02);
         }
         
         .file-upload.dragover {
             border-color: var(--primary);
-            background: rgba(37, 99, 235, 0.05);
         }
         
         .file-upload input {
             display: none;
         }
         
-        .file-upload .upload-icon {
-            font-size: 2.5rem;
-            margin-bottom: 0.5rem;
+        .file-upload .upload-text {
+            font-weight: 500;
+            margin-bottom: 0.25rem;
         }
         
         .file-upload p {
@@ -238,9 +231,8 @@
         }
         
         .file-item .file-name {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
+            font-family: monospace;
+            font-size: 0.8125rem;
         }
         
         .file-item .remove-btn {
@@ -271,17 +263,17 @@
         }
         
         .btn {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-            padding: 1rem 2rem;
-            font-size: 1rem;
+            display: inline-block;
+            padding: 0.75rem 2rem;
+            font-size: 0.9375rem;
+            font-family: 'Times New Roman', Times, Georgia, serif;
             font-weight: 600;
-            border: none;
-            border-radius: 8px;
+            border: 1px solid var(--primary);
+            border-radius: 0;
             cursor: pointer;
             transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
         
         .btn-primary {
@@ -291,8 +283,6 @@
         
         .btn-primary:hover {
             background: var(--primary-dark);
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
         }
         
         .btn-primary:disabled {
@@ -330,9 +320,9 @@
         
         .success-message {
             display: none;
-            background: #ecfdf5;
-            border: 1px solid #10b981;
-            border-radius: 8px;
+            background: #f5f5f5;
+            border: 1px solid var(--border);
+            border-radius: 0;
             padding: 1.5rem;
             text-align: center;
             margin-top: 1rem;
@@ -343,8 +333,9 @@
         }
         
         .success-message h3 {
-            color: #059669;
+            color: var(--text);
             margin-bottom: 0.5rem;
+            font-weight: 600;
         }
         
         .success-message p {
@@ -413,15 +404,15 @@
 <body>
     <div class="container">
         <header>
-            <h1>🔬 New Research Project</h1>
-            <p>Complete this form to start a new research paper project</p>
+            <h1>New Research Project</h1>
+            <p>Complete this form to initialize a new research paper</p>
         </header>
         
         <form id="intakeForm" enctype="multipart/form-data">
             <!-- Basic Information -->
             <div class="form-card">
                 <div class="form-section">
-                    <h2 class="section-title"><span class="icon">📋</span> Basic Information</h2>
+                    <h2 class="section-title">Basic Information</h2>
                     
                     <div class="form-group">
                         <label for="title">
@@ -482,11 +473,11 @@
             <!-- Hypothesis -->
             <div class="form-card">
                 <div class="form-section">
-                    <h2 class="section-title"><span class="icon">💡</span> Hypothesis</h2>
+                    <h2 class="section-title">Hypothesis</h2>
                     
                     <div class="form-group">
                         <label>Do you have a hypothesis?
-                            <span class="tooltip">ℹ️
+                            <span class="tooltip">[?]
                                 <span class="tooltip-text">A hypothesis is a testable prediction about what you expect to find. Having one helps focus the research but is not always required at this stage.</span>
                             </span>
                         </label>
@@ -516,7 +507,7 @@
             <!-- Data -->
             <div class="form-card">
                 <div class="form-section">
-                    <h2 class="section-title"><span class="icon">📊</span> Data</h2>
+                    <h2 class="section-title">Data</h2>
                     
                     <div class="form-group">
                         <label>Do you already have data?</label>
@@ -547,10 +538,9 @@
                                 </label>
                                 <div class="file-upload" id="fileUploadArea">
                                     <input type="file" id="data_files" name="data_files" multiple 
-                                           accept=".csv,.xlsx,.xls,.dta,.sav,.json,.txt,.parquet">
-                                    <div class="upload-icon">📁</div>
-                                    <p>Drag & drop files here or <span class="browse-btn">browse</span></p>
-                                    <p style="font-size: 0.8125rem;">Supported: CSV, Excel, Stata, SPSS, JSON, Parquet</p>
+                                           accept=".zip,application/zip,application/x-zip-compressed">
+                                    <p class="upload-text">Drop ZIP files here or click to browse</p>
+                                    <p style="font-size: 0.8125rem; color: var(--text-muted);">Supported: ZIP archives only (will be extracted automatically)</p>
                                 </div>
                                 <div class="file-list" id="fileList"></div>
                             </div>
@@ -580,7 +570,7 @@
             <!-- Methodology -->
             <div class="form-card">
                 <div class="form-section">
-                    <h2 class="section-title"><span class="icon">🔧</span> Methodology</h2>
+                    <h2 class="section-title">Methodology</h2>
                     
                     <div class="form-group">
                         <label for="methodology">
@@ -605,7 +595,7 @@
             <!-- Contribution & Timeline -->
             <div class="form-card">
                 <div class="form-section">
-                    <h2 class="section-title"><span class="icon">🎯</span> Contribution & Timeline</h2>
+                    <h2 class="section-title">Contribution and Timeline</h2>
                     
                     <div class="form-group">
                         <label for="expected_contribution">
@@ -646,7 +636,7 @@
             <!-- Submit -->
             <div class="submit-section">
                 <button type="submit" class="btn btn-primary" id="submitBtn">
-                    <span>🚀</span> Create Research Project
+                    Submit
                 </button>
                 
                 <div class="progress-indicator" id="progressIndicator">
@@ -655,7 +645,7 @@
                 </div>
                 
                 <div class="success-message" id="successMessage">
-                    <h3>✅ Project Created Successfully!</h3>
+                    <h3>Project Created</h3>
                     <p>Your research project has been initialized.</p>
                     <div class="project-path" id="projectPath"></div>
                 </div>
@@ -733,8 +723,8 @@
                 const item = document.createElement('div');
                 item.className = 'file-item';
                 item.innerHTML = `
-                    <span class="file-name">📄 ${file.name} (${formatFileSize(file.size)})</span>
-                    <button type="button" class="remove-btn" onclick="removeFile(${index})">×</button>
+                    <span class="file-name">${file.name} (${formatFileSize(file.size)})</span>
+                    <button type="button" class="remove-btn" onclick="removeFile(${index})">x</button>
                 `;
                 fileList.appendChild(item);
             });

@@ -16,6 +16,7 @@ import os
 import json
 import uuid
 import shutil
+import zipfile
 from datetime import datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import parse_qs
@@ -94,19 +95,55 @@ class ResearchIntakeHandler(SimpleHTTPRequestHandler):
                 os.makedirs(os.path.join(project_folder, "literature"), exist_ok=True)
                 os.makedirs(os.path.join(project_folder, "drafts"), exist_ok=True)
                 
-                # Handle file uploads
+                # Handle file uploads (ZIP only, auto-extract)
                 if "data_files" in form:
                     files = form["data_files"]
                     if not isinstance(files, list):
                         files = [files]
                     
+                    data_dir = os.path.join(project_folder, "data")
                     for file_item in files:
                         if file_item.filename:
                             filename = os.path.basename(file_item.filename)
-                            filepath = os.path.join(project_folder, "data", filename)
-                            with open(filepath, "wb") as f:
+                            # Only process ZIP files
+                            if not filename.lower().endswith('.zip'):
+                                continue
+                            
+                            # Save the ZIP temporarily
+                            temp_zip = os.path.join(data_dir, filename)
+                            with open(temp_zip, "wb") as f:
                                 f.write(file_item.file.read())
-                            project_data["uploaded_files"].append(filename)
+                            
+                            # Extract ZIP contents
+                            try:
+                                with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
+                                    # Extract to a subfolder named after the zip
+                                    extract_name = filename[:-4]  # Remove .zip
+                                    extract_dir = os.path.join(data_dir, extract_name)
+                                    zip_ref.extractall(extract_dir)
+                                    
+                                    # List extracted files
+                                    extracted_files = []
+                                    for root, dirs, fnames in os.walk(extract_dir):
+                                        for fname in fnames:
+                                            rel_path = os.path.relpath(
+                                                os.path.join(root, fname), data_dir
+                                            )
+                                            extracted_files.append(rel_path)
+                                    
+                                    project_data["uploaded_files"].append({
+                                        "archive": filename,
+                                        "extracted_to": extract_name,
+                                        "files": extracted_files
+                                    })
+                                # Remove the ZIP after extraction
+                                os.remove(temp_zip)
+                            except zipfile.BadZipFile:
+                                # Keep the file if it's not a valid ZIP
+                                project_data["uploaded_files"].append({
+                                    "archive": filename,
+                                    "error": "Invalid ZIP file"
+                                })
                 
                 # Save project metadata
                 metadata_path = os.path.join(project_folder, "project.json")
@@ -208,9 +245,19 @@ class ResearchIntakeHandler(SimpleHTTPRequestHandler):
 """
         
         if data['uploaded_files']:
-            readme += "**Uploaded Files:**\n"
+            readme += "**Uploaded Data:**\n"
             for f in data['uploaded_files']:
-                readme += f"- `data/{f}`\n"
+                if isinstance(f, dict):
+                    if 'error' in f:
+                        readme += f"- `{f['archive']}` (error: {f['error']})\n"
+                    else:
+                        readme += f"- `{f['archive']}` extracted to `data/{f['extracted_to']}/`\n"
+                        for extracted in f.get('files', [])[:10]:  # Show first 10 files
+                            readme += f"  - `{extracted}`\n"
+                        if len(f.get('files', [])) > 10:
+                            readme += f"  - ... and {len(f['files']) - 10} more files\n"
+                else:
+                    readme += f"- `data/{f}`\n"
             readme += "\n"
         
         readme += f"""## Related Literature

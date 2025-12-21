@@ -50,5 +50,5 @@ dist/
 *.log
 logs/
 
-# Keep .github for workflows and dependabot
-!.github/
+# Ignore specific files
+.github/copilot-instructions.md
