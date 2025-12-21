@@ -4,12 +4,18 @@ Workflow Stage Cache
 Caches agent outputs between workflow stages to enable resumable workflows.
 If a workflow fails at a later stage, previous stage results can be reused.
 
+Extended with version tracking for iterative refinement:
+- Multiple versions per stage (for revision history)
+- Version metadata with quality scores
+- Version comparison and rollback
+
 Cache Structure:
     {project_folder}/.workflow_cache/
-        ├── data_analyst.json
+        ├── data_analyst.json           # Latest version
+        ├── data_analyst_v1.json        # Version 1
+        ├── data_analyst_v2.json        # Version 2 (revision)
         ├── research_explorer.json
-        ├── gap_analyst.json
-        └── overview_generator.json
+        └── ...
 
 Each cache file contains:
     - stage_name: Name of the workflow stage
@@ -17,6 +23,7 @@ Each cache file contains:
     - project_id: Project identifier
     - agent_result: Full AgentResult as dict
     - input_hash: Hash of inputs (to detect if inputs changed)
+    - version: Version number (0 for initial, 1+ for revisions)
 
 Author: Gia Tenica*
 *Gia Tenica is an anagram for Agentic AI. Gia is a fully autonomous AI researcher,
@@ -28,9 +35,9 @@ import json
 import hashlib
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 from typing import Optional, Dict, Any, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from filelock import FileLock
 from loguru import logger
@@ -38,12 +45,15 @@ from loguru import logger
 
 @dataclass
 class CacheEntry:
-    """A single cached stage result."""
+    """A single cached stage result with version tracking."""
     stage_name: str
     timestamp: str
     project_id: str
     agent_result: dict
     input_hash: str
+    version: int = 0                     # 0 = initial, 1+ = revisions
+    quality_score: Optional[float] = None  # Overall quality if assessed
+    feedback_summary: Optional[str] = None  # What prompted this version
     
     def to_dict(self) -> dict:
         return {
@@ -52,6 +62,9 @@ class CacheEntry:
             "project_id": self.project_id,
             "agent_result": self.agent_result,
             "input_hash": self.input_hash,
+            "version": self.version,
+            "quality_score": self.quality_score,
+            "feedback_summary": self.feedback_summary,
         }
     
     @classmethod
@@ -62,7 +75,21 @@ class CacheEntry:
             project_id=data["project_id"],
             agent_result=data["agent_result"],
             input_hash=data["input_hash"],
+            version=data.get("version", 0),
+            quality_score=data.get("quality_score"),
+            feedback_summary=data.get("feedback_summary"),
         )
+
+
+@dataclass
+class VersionInfo:
+    """Summary information about a cached version."""
+    version: int
+    timestamp: str
+    success: bool
+    quality_score: Optional[float]
+    feedback_summary: Optional[str]
+    file_path: str
 
 
 class WorkflowCache:
@@ -355,9 +382,236 @@ class WorkflowCache:
                         "cached": True,
                         "timestamp": data.get("timestamp"),
                         "success": data.get("agent_result", {}).get("success", False),
+                        "version": data.get("version", 0),
+                        "quality_score": data.get("quality_score"),
                     }
                 except (json.JSONDecodeError, KeyError):
                     status[stage] = {"cached": False, "error": "invalid cache"}
             else:
                 status[stage] = {"cached": False}
         return status
+    
+    # ========== Version Management Methods ==========
+    
+    def _get_version_path(self, stage_name: str, version: int) -> Path:
+        """Get path to a specific version file."""
+        return self.cache_dir / f"{stage_name}_v{version}.json"
+    
+    def save_version(
+        self,
+        stage_name: str,
+        agent_result: dict,
+        context: dict,
+        project_id: str = "unknown",
+        version: int = 0,
+        quality_score: Optional[float] = None,
+        feedback_summary: Optional[str] = None,
+    ):
+        """
+        Save a specific version of agent result.
+        
+        This saves both to the main cache file (latest) and to a
+        versioned file for history tracking.
+        
+        Args:
+            stage_name: Name of the workflow stage
+            agent_result: AgentResult.to_dict() output
+            context: Current workflow context
+            project_id: Project identifier
+            version: Version number (0 = initial, 1+ = revisions)
+            quality_score: Overall quality score if assessed
+            feedback_summary: What feedback prompted this version
+        """
+        # Save to version-specific file
+        version_path = self._get_version_path(stage_name, version)
+        lock_path = version_path.with_suffix('.json.lock')
+        
+        entry = CacheEntry(
+            stage_name=stage_name,
+            timestamp=datetime.now().isoformat(),
+            project_id=project_id,
+            agent_result=agent_result,
+            input_hash=self._compute_input_hash(context, stage_name),
+            version=version,
+            quality_score=quality_score,
+            feedback_summary=feedback_summary,
+        )
+        
+        try:
+            with FileLock(lock_path, timeout=30):
+                with open(version_path, "w") as f:
+                    json.dump(entry.to_dict(), f, indent=2, default=str)
+            
+            logger.info(f"Saved version {version} for {stage_name}")
+            
+            # Also save as latest (main cache file)
+            self.save(stage_name, agent_result, context, project_id)
+            
+        except (IOError, TypeError) as e:
+            logger.error(f"Failed to save version {version} for {stage_name}: {e}")
+    
+    def get_version(self, stage_name: str, version: int) -> Optional[dict]:
+        """
+        Load a specific version of cached result.
+        
+        Args:
+            stage_name: Name of the workflow stage
+            version: Version number to load
+            
+        Returns:
+            Agent result dict if version exists, None otherwise
+        """
+        version_path = self._get_version_path(stage_name, version)
+        
+        try:
+            with open(version_path) as f:
+                data = json.load(f)
+            
+            entry = CacheEntry.from_dict(data)
+            logger.info(f"Loaded version {version} for {stage_name}")
+            return entry.agent_result
+            
+        except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
+            logger.debug(f"Version {version} not found for {stage_name}: {e}")
+            return None
+    
+    def get_all_versions(self, stage_name: str) -> List[VersionInfo]:
+        """
+        Get information about all versions of a stage.
+        
+        Returns:
+            List of VersionInfo sorted by version number
+        """
+        versions = []
+        
+        # Check for version files (v0, v1, v2, etc.)
+        for version in range(100):  # Reasonable upper limit
+            version_path = self._get_version_path(stage_name, version)
+            if version_path.exists():
+                try:
+                    with open(version_path) as f:
+                        data = json.load(f)
+                    
+                    versions.append(VersionInfo(
+                        version=data.get("version", version),
+                        timestamp=data.get("timestamp", ""),
+                        success=data.get("agent_result", {}).get("success", False),
+                        quality_score=data.get("quality_score"),
+                        feedback_summary=data.get("feedback_summary"),
+                        file_path=str(version_path),
+                    ))
+                except (json.JSONDecodeError, KeyError):
+                    continue
+            else:
+                # Stop if we hit a gap in versions
+                if version > 0:
+                    break
+        
+        return sorted(versions, key=lambda v: v.version)
+    
+    def get_latest_version(self, stage_name: str) -> Optional[int]:
+        """
+        Get the latest version number for a stage.
+        
+        Returns:
+            Latest version number, or None if no versions exist
+        """
+        versions = self.get_all_versions(stage_name)
+        if versions:
+            return versions[-1].version
+        return None
+    
+    def get_best_version(self, stage_name: str) -> Optional[Tuple[int, dict]]:
+        """
+        Get the version with the highest quality score.
+        
+        Returns:
+            Tuple of (version_number, agent_result) or None if no versions
+        """
+        versions = self.get_all_versions(stage_name)
+        if not versions:
+            return None
+        
+        # Filter to versions with quality scores
+        scored = [v for v in versions if v.quality_score is not None]
+        
+        if scored:
+            # Return highest scored version
+            best = max(scored, key=lambda v: v.quality_score)
+            result = self.get_version(stage_name, best.version)
+            if result:
+                return best.version, result
+        
+        # Fall back to latest version
+        latest = versions[-1]
+        result = self.get_version(stage_name, latest.version)
+        if result:
+            return latest.version, result
+        
+        return None
+    
+    def clear_versions(self, stage_name: str, keep_latest: bool = True):
+        """
+        Clear version history for a stage.
+        
+        Args:
+            stage_name: Name of the workflow stage
+            keep_latest: If True, keeps the latest version
+        """
+        versions = self.get_all_versions(stage_name)
+        
+        for v in versions:
+            if keep_latest and v == versions[-1]:
+                continue
+            
+            version_path = Path(v.file_path)
+            if version_path.exists():
+                version_path.unlink()
+                logger.debug(f"Deleted version {v.version} for {stage_name}")
+        
+        logger.info(f"Cleared version history for {stage_name}")
+    
+    def get_version_diff_summary(
+        self,
+        stage_name: str,
+        version_a: int,
+        version_b: int,
+    ) -> Optional[dict]:
+        """
+        Get a summary of differences between two versions.
+        
+        Args:
+            stage_name: Name of the workflow stage
+            version_a: First version number
+            version_b: Second version number
+            
+        Returns:
+            Dict with difference summary, or None if versions not found
+        """
+        result_a = self.get_version(stage_name, version_a)
+        result_b = self.get_version(stage_name, version_b)
+        
+        if not result_a or not result_b:
+            return None
+        
+        content_a = result_a.get("content", "")
+        content_b = result_b.get("content", "")
+        
+        # Simple length comparison
+        len_a = len(content_a)
+        len_b = len(content_b)
+        
+        # Quality score comparison
+        versions = {v.version: v for v in self.get_all_versions(stage_name)}
+        score_a = versions.get(version_a, VersionInfo(0, "", False, None, None, "")).quality_score
+        score_b = versions.get(version_b, VersionInfo(0, "", False, None, None, "")).quality_score
+        
+        return {
+            "version_a": version_a,
+            "version_b": version_b,
+            "length_change": len_b - len_a,
+            "length_change_percent": ((len_b - len_a) / max(len_a, 1)) * 100,
+            "quality_score_a": score_a,
+            "quality_score_b": score_b,
+            "quality_improvement": (score_b - score_a) if (score_a and score_b) else None,
+        }

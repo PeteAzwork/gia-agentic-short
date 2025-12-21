@@ -9,6 +9,8 @@ Implements best practices for:
 - Optimal model selection (Opus/Sonnet/Haiku per task type)
 - Prompt caching (5-min or 1-hour TTL)
 - Critical rules enforcement (no banned words, no hallucination)
+- Iterative refinement with revision support
+- Quality self-assessment
 
 Author: Gia Tenica*
 *Gia Tenica is an anagram for Agentic AI. Gia is a fully autonomous AI researcher,
@@ -19,8 +21,11 @@ import os
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Optional, Literal
+from typing import Any, Optional, Literal, List, Dict, TYPE_CHECKING
 from datetime import datetime
+
+if TYPE_CHECKING:
+    from src.agents.feedback import FeedbackResponse, QualityScore
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -37,7 +42,15 @@ from loguru import logger
 
 @dataclass
 class AgentResult:
-    """Result from an agent execution."""
+    """
+    Result from an agent execution.
+    
+    Extended to support iterative refinement:
+    - iteration: Current iteration number (0 for initial, 1+ for revisions)
+    - quality_scores: Quality assessment from self-critique or reviewer
+    - feedback_history: Record of feedback received
+    - previous_versions: Content history for tracking changes
+    """
     agent_name: str
     task_type: TaskType
     model_tier: ModelTier
@@ -48,6 +61,11 @@ class AgentResult:
     tokens_used: int = 0
     execution_time: float = 0.0
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    # Iteration tracking
+    iteration: int = 0
+    quality_scores: dict = field(default_factory=dict)
+    feedback_history: List[str] = field(default_factory=list)
+    previous_versions: List[str] = field(default_factory=list)
     
     def to_dict(self) -> dict:
         """Convert result to dictionary for JSON serialization."""
@@ -62,7 +80,64 @@ class AgentResult:
             "tokens_used": self.tokens_used,
             "execution_time": self.execution_time,
             "timestamp": self.timestamp,
+            "iteration": self.iteration,
+            "quality_scores": self.quality_scores,
+            "feedback_history": self.feedback_history,
+            "previous_versions": self.previous_versions,
         }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> "AgentResult":
+        """Create AgentResult from dictionary."""
+        return cls(
+            agent_name=data["agent_name"],
+            task_type=TaskType(data["task_type"]),
+            model_tier=ModelTier(data["model_tier"]),
+            success=data["success"],
+            content=data["content"],
+            structured_data=data.get("structured_data", {}),
+            error=data.get("error"),
+            tokens_used=data.get("tokens_used", 0),
+            execution_time=data.get("execution_time", 0.0),
+            timestamp=data.get("timestamp", ""),
+            iteration=data.get("iteration", 0),
+            quality_scores=data.get("quality_scores", {}),
+            feedback_history=data.get("feedback_history", []),
+            previous_versions=data.get("previous_versions", []),
+        )
+    
+    def with_revision(
+        self,
+        new_content: str,
+        feedback: str,
+        new_quality_scores: Optional[dict] = None,
+    ) -> "AgentResult":
+        """
+        Create a new result representing a revision of this one.
+        
+        Args:
+            new_content: Revised content
+            feedback: Feedback that prompted the revision
+            new_quality_scores: Updated quality scores
+            
+        Returns:
+            New AgentResult with incremented iteration
+        """
+        return AgentResult(
+            agent_name=self.agent_name,
+            task_type=self.task_type,
+            model_tier=self.model_tier,
+            success=True,
+            content=new_content,
+            structured_data=self.structured_data,
+            error=None,
+            tokens_used=0,  # Will be updated by caller
+            execution_time=0.0,  # Will be updated by caller
+            iteration=self.iteration + 1,
+            quality_scores=new_quality_scores or {},
+            feedback_history=self.feedback_history + [feedback],
+            previous_versions=self.previous_versions + [self.content],
+        )
 
 
 class BaseAgent(ABC):
@@ -208,3 +283,186 @@ class BaseAgent(ABC):
             tokens_used=tokens_used,
             execution_time=execution_time,
         )
+    
+    async def revise(
+        self,
+        original_result: AgentResult,
+        feedback: str,
+        context: Optional[dict] = None,
+    ) -> AgentResult:
+        """
+        Revise a previous output based on feedback.
+        
+        Default implementation re-runs execute() with feedback prepended.
+        Subclasses can override for custom revision logic.
+        
+        Args:
+            original_result: The result to revise
+            feedback: Structured feedback on what to improve
+            context: Original context (if needed for revision)
+            
+        Returns:
+            New AgentResult with revision
+        """
+        import time
+        start_time = time.time()
+        
+        # Build revision prompt
+        revision_prompt = f"""## Revision Request
+
+You previously produced the following output:
+
+---
+{original_result.content}
+---
+
+Please revise this output based on the following feedback:
+
+{feedback}
+
+Produce an improved version that addresses all the issues raised.
+Maintain the same format and structure as the original.
+"""
+        
+        try:
+            response, tokens = await self._call_claude(
+                user_message=revision_prompt,
+                use_thinking=False,
+                max_tokens=32000,
+            )
+            
+            elapsed = time.time() - start_time
+            
+            # Create revised result
+            revised = original_result.with_revision(
+                new_content=response,
+                feedback=feedback,
+            )
+            revised.tokens_used = tokens
+            revised.execution_time = elapsed
+            
+            logger.info(
+                f"{self.name} revision {revised.iteration} completed "
+                f"in {elapsed:.2f}s, {tokens} tokens"
+            )
+            
+            return revised
+            
+        except Exception as e:
+            logger.error(f"{self.name} revision error: {e}")
+            return AgentResult(
+                agent_name=self.name,
+                task_type=self.task_type,
+                model_tier=self.model_tier,
+                success=False,
+                content="",
+                error=f"Revision failed: {str(e)}",
+                execution_time=time.time() - start_time,
+                iteration=original_result.iteration + 1,
+                previous_versions=original_result.previous_versions + [original_result.content],
+            )
+    
+    async def self_critique(
+        self,
+        result: AgentResult,
+        criteria: Optional[List[str]] = None,
+    ) -> dict:
+        """
+        Self-assess the quality of output.
+        
+        Returns a dictionary of quality scores and identified issues.
+        
+        Args:
+            result: The result to assess
+            criteria: Specific criteria to evaluate (uses defaults if None)
+            
+        Returns:
+            Dict with 'scores' and 'issues' keys
+        """
+        default_criteria = [
+            "accuracy: Are all claims factually correct?",
+            "completeness: Are all required elements present?",
+            "clarity: Is the content clear and unambiguous?",
+            "consistency: Is the content internally consistent?",
+            "relevance: Is all content relevant to the task?",
+        ]
+        
+        criteria_to_use = criteria or default_criteria
+        criteria_text = "\n".join(f"- {c}" for c in criteria_to_use)
+        
+        critique_prompt = f"""## Self-Assessment Request
+
+Please critically evaluate the following output:
+
+---
+{result.content}
+---
+
+Evaluate against these criteria:
+{criteria_text}
+
+Respond in this exact JSON format:
+{{
+    "scores": {{
+        "accuracy": 0.0-1.0,
+        "completeness": 0.0-1.0,
+        "clarity": 0.0-1.0,
+        "consistency": 0.0-1.0,
+        "relevance": 0.0-1.0,
+        "overall": 0.0-1.0
+    }},
+    "issues": [
+        {{
+            "category": "accuracy|completeness|clarity|consistency|relevance",
+            "severity": "critical|major|minor",
+            "description": "Brief description of the issue",
+            "suggestion": "How to fix it"
+        }}
+    ],
+    "summary": "One paragraph summary of quality assessment"
+}}
+
+Be honest and critical. Do not inflate scores.
+"""
+        
+        try:
+            response, _ = await self._call_claude(
+                user_message=critique_prompt,
+                use_thinking=False,
+                max_tokens=4000,
+            )
+            
+            # Parse JSON from response
+            import json
+            import re
+            
+            # Extract JSON from response
+            json_match = re.search(r'\{[\s\S]*\}', response)
+            if json_match:
+                critique_data = json.loads(json_match.group())
+                return critique_data
+            else:
+                logger.warning(f"{self.name} self-critique did not return valid JSON")
+                return {
+                    "scores": {"overall": 0.5},
+                    "issues": [],
+                    "summary": "Unable to parse self-critique",
+                }
+                
+        except Exception as e:
+            logger.error(f"{self.name} self-critique error: {e}")
+            return {
+                "scores": {"overall": 0.5},
+                "issues": [],
+                "summary": f"Self-critique failed: {str(e)}",
+            }
+    
+    def supports_revision(self) -> bool:
+        """Check if this agent supports revision."""
+        return True  # Default to True; subclasses can override
+    
+    def get_agent_id(self) -> Optional[str]:
+        """Get the agent's registry ID if registered."""
+        from src.agents.registry import AgentRegistry
+        spec = AgentRegistry.get_by_name(self.name)
+        return spec.id if spec else None

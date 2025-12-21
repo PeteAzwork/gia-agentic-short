@@ -176,7 +176,7 @@ print('done')
 """
         result = executor.execute(code)
         assert result.success is False
-        assert "timeout" in str(result.error).lower()
+        assert "timed out" in str(result.error).lower()
     
     def test_working_directory(self, executor):
         """Test executing code in specific directory."""
