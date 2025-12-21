@@ -249,8 +249,9 @@ class ClaudeClient:
         if not self.api_key:
             raise ValueError("ANTHROPIC_API_KEY not found in environment")
         
-        # Configure timeout: 120s total, 15s connect for long-running LLM calls
-        timeout_config = httpx.Timeout(120.0, connect=15.0)
+        # Configure timeout: 600s (10 min) total, 30s connect for long-running LLM calls
+        # Complex reasoning tasks with large contexts can take several minutes
+        timeout_config = httpx.Timeout(600.0, connect=30.0)
         
         self.client = anthropic.Anthropic(
             api_key=self.api_key,

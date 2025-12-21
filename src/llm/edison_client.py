@@ -17,9 +17,14 @@ from typing import Optional, List
 from dataclasses import dataclass, field
 from enum import Enum
 
+import hashlib
 from edison_client import EdisonClient as OfficialEdisonClient
 from edison_client import JobNames as EdisonJobNames
 from loguru import logger
+
+# Track active/recent Edison requests to prevent duplicates
+_active_requests: dict[str, float] = {}  # query_hash -> start_time
+_request_lock = None  # Lazy-init asyncio.Lock
 
 
 class JobStatus(Enum):
@@ -198,6 +203,9 @@ class EdisonClient:
         """
         Search literature asynchronously using Edison API.
         
+        Includes request deduplication to prevent duplicate API calls when
+        workflow restarts or multiple instances run concurrently.
+        
         Args:
             query: The research question to search for
             context: Optional additional context
@@ -205,6 +213,10 @@ class EdisonClient:
         Returns:
             LiteratureResult with answer and citations
         """
+        global _request_lock, _active_requests
+        import asyncio
+        import time
+        
         if not self._client:
             return LiteratureResult(
                 query=query,
@@ -212,15 +224,47 @@ class EdisonClient:
                 error="Edison API key not configured",
             )
         
-        import time
+        # Build the full query with context if provided
+        full_query = query
+        if context:
+            full_query = f"{query}\n\nContext:\n{context}"
+        
+        # Generate hash for deduplication (based on query content)
+        query_hash = hashlib.sha256(full_query.encode()).hexdigest()[:16]
+        
+        # Lazy-init lock for thread safety
+        if _request_lock is None:
+            _request_lock = asyncio.Lock()
+        
+        # Check for duplicate/concurrent requests
+        async with _request_lock:
+            current_time = time.time()
+            
+            # Clean up old entries (older than 30 minutes)
+            expired = [h for h, t in _active_requests.items() if current_time - t > 1800]
+            for h in expired:
+                del _active_requests[h]
+            
+            # Check if this query is already in progress or was recently made
+            if query_hash in _active_requests:
+                elapsed = current_time - _active_requests[query_hash]
+                logger.warning(
+                    f"DUPLICATE Edison request detected (hash={query_hash[:8]}, "
+                    f"started {elapsed:.1f}s ago). Blocking duplicate call."
+                )
+                return LiteratureResult(
+                    query=query,
+                    status=JobStatus.FAILED,
+                    error=f"Duplicate request blocked. A similar query was submitted {elapsed:.1f}s ago.",
+                )
+            
+            # Mark this request as active
+            _active_requests[query_hash] = current_time
+            logger.info(f"Edison request registered (hash={query_hash[:8]})")
+        
         start_time = time.time()
         
         try:
-            # Build the full query with context if provided
-            full_query = query
-            if context:
-                full_query = f"{query}\n\nContext:\n{context}"
-            
             logger.info(f"Submitting literature search to Edison: {query[:100]}...")
             
             # Use async method from edison-client
@@ -233,7 +277,7 @@ class EdisonClient:
             task_response = await self._client.arun_tasks_until_done(task_data)
             
             processing_time = time.time() - start_time
-            logger.info(f"Edison search completed in {processing_time:.1f}s")
+            logger.info(f"Edison search completed in {processing_time:.1f}s (hash={query_hash[:8]})")
             
             # Parse response
             answer = getattr(task_response, 'answer', str(task_response))
@@ -259,6 +303,13 @@ class EdisonClient:
                 error=str(e),
                 processing_time=time.time() - start_time,
             )
+        finally:
+            # Remove from active requests after completion (success or failure)
+            # Keep in tracking for 5 minutes to prevent rapid re-submission
+            async with _request_lock:
+                if query_hash in _active_requests:
+                    # Update timestamp to mark completion time for dedup window
+                    _active_requests[query_hash] = time.time()
     
     def search_literature_sync(
         self,
