@@ -1,0 +1,421 @@
+"""
+Extended Research Workflow with Gap Resolution
+===============================================
+Extends the base workflow with gap resolution and overview updating capabilities.
+
+This workflow is designed to be run after the initial overview is generated,
+taking the RESEARCH_OVERVIEW.md and resolving actionable gaps through
+code execution, then producing an updated overview.
+
+Workflow:
+1. Load existing RESEARCH_OVERVIEW.md
+2. GapResolverAgent - Identify and resolve data-related gaps via code
+3. OverviewUpdaterAgent - Create UPDATED_RESEARCH_OVERVIEW.md
+
+Author: Gia Tenica*
+*Gia Tenica is an anagram for Agentic AI. Gia is a fully autonomous AI researcher,
+for more information see: https://giatenica.com
+"""
+
+import os
+import sys
+import json
+import asyncio
+from pathlib import Path
+from datetime import datetime
+from typing import Optional
+from dataclasses import dataclass, field
+
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
+from src.llm.claude_client import ClaudeClient
+from src.agents.gap_resolver import GapResolverAgent, OverviewUpdaterAgent
+from src.agents.base import AgentResult
+from src.agents.cache import WorkflowCache
+from src.tracing import init_tracing, get_tracer
+from loguru import logger
+
+
+@dataclass
+class GapResolutionWorkflowResult:
+    """Result from the gap resolution workflow execution."""
+    success: bool
+    project_id: str
+    project_folder: str
+    original_overview_path: str
+    gap_resolution: Optional[AgentResult] = None
+    updated_overview: Optional[AgentResult] = None
+    updated_overview_path: Optional[str] = None
+    gaps_resolved: int = 0
+    gaps_total: int = 0
+    total_tokens: int = 0
+    total_time: float = 0.0
+    errors: list = field(default_factory=list)
+    code_executions: list = field(default_factory=list)
+    
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "success": self.success,
+            "project_id": self.project_id,
+            "project_folder": self.project_folder,
+            "original_overview_path": self.original_overview_path,
+            "updated_overview_path": self.updated_overview_path,
+            "gaps_resolved": self.gaps_resolved,
+            "gaps_total": self.gaps_total,
+            "total_tokens": self.total_tokens,
+            "total_time": self.total_time,
+            "errors": self.errors,
+            "code_executions": self.code_executions,
+            "agents": {
+                "gap_resolution": self.gap_resolution.to_dict() if self.gap_resolution else None,
+                "updated_overview": self.updated_overview.to_dict() if self.updated_overview else None,
+            }
+        }
+
+
+class GapResolutionWorkflow:
+    """
+    Workflow that resolves research gaps and updates the overview.
+    
+    This is designed to be run after the initial ResearchWorkflow completes,
+    taking the generated RESEARCH_OVERVIEW.md as input.
+    
+    Sequence:
+    1. Load RESEARCH_OVERVIEW.md and project.json
+    2. Run GapResolverAgent to identify and resolve data gaps
+    3. Run OverviewUpdaterAgent to create updated overview
+    4. Save UPDATED_RESEARCH_OVERVIEW.md
+    """
+    
+    def __init__(
+        self,
+        client: Optional[ClaudeClient] = None,
+        use_cache: bool = True,
+        cache_max_age_hours: int = 24,
+        code_execution_timeout: int = 120,
+    ):
+        """
+        Initialize gap resolution workflow.
+        
+        Args:
+            client: Optional shared ClaudeClient
+            use_cache: Whether to use stage caching
+            cache_max_age_hours: Maximum cache age
+            code_execution_timeout: Timeout for code execution in seconds
+        """
+        self.client = client or ClaudeClient()
+        self.use_cache = use_cache
+        self.cache_max_age_hours = cache_max_age_hours
+        
+        # Initialize tracing
+        init_tracing()
+        self.tracer = get_tracer("gap-resolution-workflow")
+        
+        # Initialize agents
+        self.gap_resolver = GapResolverAgent(
+            client=self.client,
+            execution_timeout=code_execution_timeout,
+        )
+        self.overview_updater = OverviewUpdaterAgent(client=self.client)
+        
+        logger.info(f"Gap resolution workflow initialized (cache={'enabled' if use_cache else 'disabled'})")
+    
+    async def run(self, project_folder: str) -> GapResolutionWorkflowResult:
+        """
+        Execute the gap resolution workflow.
+        
+        Args:
+            project_folder: Path to project folder with RESEARCH_OVERVIEW.md
+            
+        Returns:
+            GapResolutionWorkflowResult with all findings
+        """
+        import time
+        start_time = time.time()
+        
+        with self.tracer.start_as_current_span("gap_resolution_workflow") as workflow_span:
+            workflow_span.set_attribute("project_folder", project_folder)
+            
+            project_path = Path(project_folder)
+            overview_path = project_path / "RESEARCH_OVERVIEW.md"
+            project_json_path = project_path / "project.json"
+            
+            # Validate inputs exist
+            if not overview_path.exists():
+                return GapResolutionWorkflowResult(
+                    success=False,
+                    project_id="unknown",
+                    project_folder=project_folder,
+                    original_overview_path=str(overview_path),
+                    errors=["RESEARCH_OVERVIEW.md not found. Run initial workflow first."],
+                )
+            
+            if not project_json_path.exists():
+                return GapResolutionWorkflowResult(
+                    success=False,
+                    project_id="unknown",
+                    project_folder=project_folder,
+                    original_overview_path=str(overview_path),
+                    errors=["project.json not found"],
+                )
+            
+            # Load data
+            research_overview = overview_path.read_text()
+            with open(project_json_path) as f:
+                project_data = json.load(f)
+            
+            project_id = project_data.get("id", "unknown")
+            workflow_span.set_attribute("project_id", project_id)
+            logger.info(f"Starting gap resolution workflow for project {project_id}")
+            
+            # Initialize cache
+            cache = None
+            if self.use_cache:
+                cache = WorkflowCache(project_folder, max_age_hours=self.cache_max_age_hours)
+            
+            result = GapResolutionWorkflowResult(
+                success=True,
+                project_id=project_id,
+                project_folder=project_folder,
+                original_overview_path=str(overview_path),
+            )
+            
+            # Build context
+            context = {
+                "project_folder": project_folder,
+                "project_data": project_data,
+                "research_overview": research_overview,
+            }
+            
+            # Step 1: Gap Resolution
+            logger.info("Step 1/2: Running Gap Resolver...")
+            with self.tracer.start_as_current_span("gap_resolver") as span:
+                span.set_attribute("agent", "GapResolver")
+                span.set_attribute("model_tier", "sonnet")
+                try:
+                    # Check cache first
+                    if cache and cache.has_valid_cache("gap_resolver", context):
+                        cached_data = cache.load("gap_resolver")
+                        gap_result = self._result_from_cache(cached_data)
+                        span.set_attribute("cached", True)
+                        logger.info("Step 1/2: Using cached Gap Resolver result")
+                    else:
+                        gap_result = await self.gap_resolver.execute(context)
+                        if cache and gap_result.success:
+                            cache.save("gap_resolver", gap_result.to_dict(), context, project_id)
+                        span.set_attribute("cached", False)
+                    
+                    result.gap_resolution = gap_result
+                    result.total_tokens += gap_result.tokens_used
+                    
+                    # Extract gap statistics
+                    structured = gap_result.structured_data or {}
+                    result.gaps_resolved = structured.get("resolved_count", 0)
+                    result.gaps_total = structured.get("total_gaps", 0)
+                    result.code_executions = [
+                        {
+                            "gap_id": r.get("gap_id"),
+                            "success": r.get("execution_result", {}).get("success", False),
+                            "resolved": r.get("resolved", False),
+                        }
+                        for r in structured.get("resolutions", [])
+                    ]
+                    
+                    context["gap_resolutions"] = structured
+                    span.set_attribute("tokens_used", gap_result.tokens_used)
+                    span.set_attribute("success", gap_result.success)
+                    span.set_attribute("gaps_resolved", result.gaps_resolved)
+                    span.set_attribute("gaps_total", result.gaps_total)
+                    
+                    if not gap_result.success:
+                        result.errors.append(f"Gap resolution failed: {gap_result.error}")
+                        span.set_attribute("error", gap_result.error)
+                        
+                except Exception as e:
+                    logger.error(f"Gap resolution error: {e}")
+                    result.errors.append(f"Gap resolution error: {str(e)}")
+                    span.set_attribute("error", str(e))
+            
+            # Step 2: Overview Update (only if gaps were processed)
+            if result.gaps_total > 0:
+                logger.info("Step 2/2: Running Overview Updater...")
+                with self.tracer.start_as_current_span("overview_updater") as span:
+                    span.set_attribute("agent", "OverviewUpdater")
+                    span.set_attribute("model_tier", "opus")
+                    try:
+                        # Check cache first
+                        if cache and cache.has_valid_cache("overview_updater", context):
+                            cached_data = cache.load("overview_updater")
+                            update_result = self._result_from_cache(cached_data)
+                            span.set_attribute("cached", True)
+                            logger.info("Step 2/2: Using cached Overview Updater result")
+                        else:
+                            update_result = await self.overview_updater.execute(context)
+                            if cache and update_result.success:
+                                cache.save("overview_updater", update_result.to_dict(), context, project_id)
+                            span.set_attribute("cached", False)
+                        
+                        result.updated_overview = update_result
+                        result.total_tokens += update_result.tokens_used
+                        span.set_attribute("tokens_used", update_result.tokens_used)
+                        span.set_attribute("success", update_result.success)
+                        
+                        if update_result.success:
+                            # Save updated overview
+                            updated_path = self._save_updated_overview(project_path, update_result)
+                            result.updated_overview_path = str(updated_path)
+                            span.set_attribute("updated_overview_path", str(updated_path))
+                            logger.info(f"Updated overview saved to: {updated_path}")
+                        else:
+                            result.errors.append(f"Overview update failed: {update_result.error}")
+                            span.set_attribute("error", update_result.error)
+                            
+                    except Exception as e:
+                        logger.error(f"Overview update error: {e}")
+                        result.errors.append(f"Overview update error: {str(e)}")
+                        span.set_attribute("error", str(e))
+            else:
+                logger.info("Step 2/2: Skipping Overview Updater (no gaps to process)")
+            
+            # Save workflow results
+            self._save_workflow_results(project_path, result)
+            
+            result.total_time = time.time() - start_time
+            result.success = len(result.errors) == 0
+            
+            workflow_span.set_attribute("total_tokens", result.total_tokens)
+            workflow_span.set_attribute("total_time", result.total_time)
+            workflow_span.set_attribute("success", result.success)
+            
+            logger.info(
+                f"Gap resolution workflow completed in {result.total_time:.2f}s, "
+                f"{result.total_tokens} tokens, "
+                f"{result.gaps_resolved}/{result.gaps_total} gaps resolved"
+            )
+            
+            return result
+    
+    def _result_from_cache(self, cached_data: dict) -> AgentResult:
+        """Reconstruct AgentResult from cached dictionary."""
+        from src.llm.claude_client import TaskType, ModelTier
+        
+        return AgentResult(
+            agent_name=cached_data.get("agent_name", "unknown"),
+            task_type=TaskType(cached_data.get("task_type", "coding")),
+            model_tier=ModelTier(cached_data.get("model_tier", "sonnet")),
+            success=cached_data.get("success", False),
+            content=cached_data.get("content", ""),
+            structured_data=cached_data.get("structured_data", {}),
+            error=cached_data.get("error"),
+            tokens_used=cached_data.get("tokens_used", 0),
+            execution_time=cached_data.get("execution_time", 0.0),
+            timestamp=cached_data.get("timestamp", ""),
+        )
+    
+    def _save_updated_overview(self, project_path: Path, update_result: AgentResult) -> Path:
+        """Save the updated overview to the project folder."""
+        updated_path = project_path / "UPDATED_RESEARCH_OVERVIEW.md"
+        
+        with open(updated_path, "w") as f:
+            f.write(update_result.content)
+        
+        return updated_path
+    
+    def _save_workflow_results(self, project_path: Path, result: GapResolutionWorkflowResult):
+        """Save workflow results as JSON."""
+        results_path = project_path / "gap_resolution_results.json"
+        
+        with open(results_path, "w") as f:
+            json.dump(result.to_dict(), f, indent=2)
+        
+        logger.debug(f"Gap resolution results saved to: {results_path}")
+
+
+async def run_gap_resolution_workflow(project_folder: str) -> GapResolutionWorkflowResult:
+    """
+    Convenience function to run the gap resolution workflow.
+    
+    Args:
+        project_folder: Path to the project folder
+        
+    Returns:
+        GapResolutionWorkflowResult with all findings
+    """
+    workflow = GapResolutionWorkflow()
+    return await workflow.run(project_folder)
+
+
+def run_gap_resolution_sync(project_folder: str) -> GapResolutionWorkflowResult:
+    """Synchronous wrapper for running the gap resolution workflow."""
+    return asyncio.run(run_gap_resolution_workflow(project_folder))
+
+
+# CLI interface
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Run gap resolution workflow")
+    parser.add_argument(
+        "project_folder",
+        help="Path to the project folder containing RESEARCH_OVERVIEW.md"
+    )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Enable verbose logging"
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable caching"
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=120,
+        help="Code execution timeout in seconds (default: 120)"
+    )
+    
+    args = parser.parse_args()
+    
+    # Configure logging
+    if args.verbose:
+        logger.remove()
+        logger.add(sys.stderr, level="DEBUG")
+    
+    # Run workflow
+    workflow = GapResolutionWorkflow(
+        use_cache=not args.no_cache,
+        code_execution_timeout=args.timeout,
+    )
+    result = asyncio.run(workflow.run(args.project_folder))
+    
+    # Print summary
+    print("\n" + "=" * 60)
+    print("GAP RESOLUTION WORKFLOW COMPLETE")
+    print("=" * 60)
+    print(f"Project: {result.project_id}")
+    print(f"Success: {result.success}")
+    print(f"Total Time: {result.total_time:.2f}s")
+    print(f"Total Tokens: {result.total_tokens}")
+    print(f"Gaps Resolved: {result.gaps_resolved}/{result.gaps_total}")
+    
+    if result.code_executions:
+        print(f"\nCode Executions:")
+        for exec_info in result.code_executions:
+            status = "OK" if exec_info.get("resolved") else "PARTIAL" if exec_info.get("success") else "FAILED"
+            print(f"  - {exec_info.get('gap_id')}: {status}")
+    
+    if result.updated_overview_path:
+        print(f"\nUpdated overview saved to: {result.updated_overview_path}")
+    
+    if result.errors:
+        print(f"\nErrors ({len(result.errors)}):")
+        for error in result.errors:
+            print(f"  - {error}")
+    
+    print("=" * 60)
+    
+    sys.exit(0 if result.success else 1)
