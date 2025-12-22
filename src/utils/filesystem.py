@@ -11,6 +11,15 @@ for more information see: https://giatenica.com
 from __future__ import annotations
 
 
+def validate_source_id(source_id: str) -> None:
+    if not source_id or not isinstance(source_id, str):
+        raise ValueError("source_id must be a non-empty string")
+    if "/" in source_id or "\\" in source_id:
+        raise ValueError("source_id must not contain path separators")
+    if ".." in source_id:
+        raise ValueError("source_id must not contain '..'")
+
+
 def source_id_to_dirname(source_id: str) -> str:
     """Map a source_id to a filesystem-safe directory name.
 

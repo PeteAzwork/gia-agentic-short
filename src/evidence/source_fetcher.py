@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
-from src.utils.filesystem import source_id_to_dirname
+from src.utils.filesystem import source_id_to_dirname, validate_source_id
 from src.utils.validation import validate_project_folder, validate_path
 
 
@@ -199,6 +199,8 @@ class SourceFetcherTool:
         """
         src_path = self.project_folder / source.relative_path
         validate_path(src_path, must_exist=True, must_be_file=True, base_dir=self.project_folder)
+
+        validate_source_id(source.source_id)
 
         source_dirname = source_id_to_dirname(source.source_id)
         raw_dir = self.project_folder / self.sources_subdir / source_dirname / "raw"
