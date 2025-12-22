@@ -75,6 +75,33 @@ def validate_evidence_item(item: Dict[str, Any]) -> None:
     Uses src/schemas/evidence_item.schema.json.
     """
     validate_against_schema(item, "evidence_item.schema.json")
+    _validate_evidence_item_span_ordering(item)
+
+
+def _validate_evidence_item_span_ordering(item: Dict[str, Any]) -> None:
+    """Validate ordering constraints not expressible in JSON Schema.
+
+    Ensures locator.span has non-decreasing end values.
+    """
+    locator = item.get("locator")
+    if not isinstance(locator, dict):
+        return
+
+    span = locator.get("span")
+    if span is None:
+        return
+    if not isinstance(span, dict):
+        raise ValueError("Validation failed at 'locator/span': span must be an object")
+
+    start_line = span.get("start_line")
+    end_line = span.get("end_line")
+    if isinstance(start_line, int) and isinstance(end_line, int) and end_line < start_line:
+        raise ValueError("Validation failed at 'locator/span': end_line must be >= start_line")
+
+    start_char = span.get("start_char")
+    end_char = span.get("end_char")
+    if isinstance(start_char, int) and isinstance(end_char, int) and end_char < start_char:
+        raise ValueError("Validation failed at 'locator/span': end_char must be >= start_char")
 
 
 def is_valid_evidence_item(item: Any) -> bool:

@@ -7,15 +7,7 @@ Author: Gia Tenica*
 for more information see: https://giatenica.com
 """
 
-import sys
-from pathlib import Path
 import pytest
-
-
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-
 from src.utils.schema_validation import (
     validate_evidence_item,
     is_valid_evidence_item,
@@ -74,3 +66,67 @@ def test_is_valid_evidence_item_boolean_helper():
     assert is_valid_evidence_item(_valid_item()) is True
     assert is_valid_evidence_item({}) is False
     assert is_valid_evidence_item("not a dict") is False
+
+
+@pytest.mark.unit
+def test_validate_evidence_item_rejects_invalid_kind_enum():
+    item = _valid_item()
+    item["kind"] = "not-a-kind"
+    with pytest.raises(ValueError, match="kind"):
+        validate_evidence_item(item)
+
+
+@pytest.mark.unit
+def test_validate_evidence_item_rejects_invalid_locator_type_enum():
+    item = _valid_item()
+    item["locator"]["type"] = "not-a-locator-type"
+    with pytest.raises(ValueError, match="locator"):
+        validate_evidence_item(item)
+
+
+@pytest.mark.unit
+def test_validate_evidence_item_rejects_schema_version_mismatch():
+    item = _valid_item()
+    item["schema_version"] = "2.0"
+    with pytest.raises(ValueError, match="schema_version"):
+        validate_evidence_item(item)
+
+
+@pytest.mark.unit
+def test_validate_evidence_item_rejects_empty_required_strings():
+    item = _valid_item()
+    item["evidence_id"] = ""
+    with pytest.raises(ValueError, match="evidence_id"):
+        validate_evidence_item(item)
+
+
+@pytest.mark.unit
+def test_validate_evidence_item_rejects_invalid_parser_object():
+    item = _valid_item()
+    item["parser"] = {"version": "1"}
+    with pytest.raises(ValueError, match="parser"):
+        validate_evidence_item(item)
+
+
+@pytest.mark.unit
+def test_validate_evidence_item_rejects_invalid_locator_object():
+    item = _valid_item()
+    item["locator"] = {"type": "doi"}
+    with pytest.raises(ValueError, match="locator"):
+        validate_evidence_item(item)
+
+
+@pytest.mark.unit
+def test_validate_evidence_item_rejects_span_ordering_end_line_before_start_line():
+    item = _valid_item()
+    item["locator"]["span"] = {"start_line": 10, "end_line": 9}
+    with pytest.raises(ValueError, match="end_line"):
+        validate_evidence_item(item)
+
+
+@pytest.mark.unit
+def test_validate_evidence_item_rejects_span_ordering_end_char_before_start_char():
+    item = _valid_item()
+    item["locator"]["span"] = {"start_char": 10, "end_char": 9}
+    with pytest.raises(ValueError, match="end_char"):
+        validate_evidence_item(item)
