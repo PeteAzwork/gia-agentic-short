@@ -127,6 +127,11 @@ class EvidenceStore:
         return sp
 
     def read_parsed(self, source_id: str) -> Any:
+        """Read parsed document representation from sources/<source_id>/parsed.json.
+
+        The parsed.json file is expected to already exist; a FileNotFoundError
+        will be raised if it is missing.
+        """
         sp = self.source_paths(source_id)
         with open(sp.parsed_path, "r", encoding="utf-8") as f:
             return json.load(f)
