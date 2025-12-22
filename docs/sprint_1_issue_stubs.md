@@ -15,9 +15,9 @@ Created issues:
 - Issue #6 (EvidenceItem schema + validation): Done (PR #13 merged).
 - Issue #7 (EvidenceStore): Done (append-only JSONL ledger merged via PR #14; per-source folder layout + parsed/evidence IO added).
 - Issue #8 (SourceFetcherTool): Done (local discovery + text load merged via PR #15; ingest/copy into `sources/<source_id>/raw/` added).
-- Issue #9 (Parser): Done for in-memory blocks (PR #16 merged); wiring to write `parsed.json` is still missing.
-- Issue #10 (EvidenceExtractorAgent): Not started.
-- Issue #11 (Evidence gates): Not started.
+- Issue #9 (Parser): Done for in-memory blocks (PR #16 merged); `parsed.json` writing is available via the opt-in local evidence pipeline stage.
+- Issue #10 (EvidenceExtractorAgent): Done (deterministic extractor core + agent wrapper; schema-valid evidence output).
+- Issue #11 (Evidence gates): Done (gate utility added; opt-in enforcement wired in workflows).
 
 ## Issue 1: EvidenceItem schema + validation utility
 Title: Sprint 1: Add EvidenceItem schema and JSON schema validation

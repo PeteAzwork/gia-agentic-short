@@ -43,9 +43,13 @@ Each item below should be a separate PR.
   - Implemented: [src/evidence/source_fetcher.py](src/evidence/source_fetcher.py) discovers and reads text files under default project dirs and can copy a discovered source into `sources/<source_id>/raw/`.
 - PR 4 (Parser interface + MVP parser): Done for “location-indexed blocks” (in-memory); merged via PR #16.
   - Implemented: [src/evidence/parser.py](src/evidence/parser.py) outputs blocks with 1-based line spans and has unit tests.
-  - Missing vs checklist: writing `sources/<source_id>/parsed.json` is not implemented yet.
-- PR 5 (Evidence extraction MVP): Not started.
-- PR 6 (Evidence gates in workflows): Not started.
+  - Note: writing `sources/<source_id>/parsed.json` is handled by the opt-in local evidence pipeline stage: [src/evidence/pipeline.py](src/evidence/pipeline.py) (used by [src/agents/literature_workflow.py](src/agents/literature_workflow.py) when enabled).
+- PR 5 (Evidence extraction MVP): Done.
+  - Implemented: [src/evidence/extraction.py](src/evidence/extraction.py) (deterministic extractor core) and [src/agents/evidence_extractor.py](src/agents/evidence_extractor.py) (agent wrapper reading `parsed.json` and writing `evidence.json`).
+  - Notes: For deterministic fixtures, pass a fixed `created_at` into `extract_evidence_items(...)`.
+- PR 6 (Evidence gates in workflows): Done.
+  - Implemented: [src/evidence/gates.py](src/evidence/gates.py) with `EvidenceGateConfig`, `check_evidence_gate`, and `enforce_evidence_gate`.
+  - Wiring: gate enforcement is opt-in via workflow context (see below).
 
 ### PR 1: Add EvidenceItem schema and validation
 - Add `src/schemas/evidence_item.json` (or equivalent)
@@ -94,6 +98,10 @@ Each item below should be a separate PR.
   - Produces schema-valid evidence items
   - Deterministic output on a fixed input fixture
 
+Implementation notes:
+- The extractor is offline by default and does not call external services.
+- Evidence IDs are stable for a fixed input plus a fixed `created_at`.
+
 ### PR 6: Gates in workflows
 - Add a gating function that checks evidence coverage
 - Enforce in the relevant workflow stage(s):
@@ -101,6 +109,12 @@ Each item below should be a separate PR.
 - Tests
   - Gate blocks when evidence missing
   - Gate passes when evidence present
+
+Configuration notes:
+- Gate enforcement is off by default.
+- To enforce, include in workflow context:
+  - `evidence_gate.require_evidence: true`
+  - `evidence_gate.min_items_per_source: 1` (default)
 
 ## Verification plan
 - Run unit tests: `pytest -m unit`

@@ -28,7 +28,7 @@ import json
 import asyncio
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
 from dataclasses import dataclass, field
 
 from src.llm.claude_client import ClaudeClient
@@ -43,6 +43,8 @@ from src.agents.cache import WorkflowCache
 from src.agents.consistency_checker import ConsistencyCheckerAgent
 from src.agents.readiness_assessor import ReadinessAssessorAgent
 from src.utils.validation import validate_project_folder
+from src.evidence.gates import EvidenceGateConfig, EvidenceGateError, enforce_evidence_gate
+from src.evidence.pipeline import EvidencePipelineConfig, run_local_evidence_pipeline
 from src.tracing import init_tracing, get_tracer
 from loguru import logger
 
@@ -149,7 +151,7 @@ class LiteratureWorkflow:
         
         logger.info(f"Literature workflow initialized with 7 agents (cache={'enabled' if use_cache else 'disabled'})")
     
-    async def run(self, project_folder: str) -> LiteratureWorkflowResult:
+    async def run(self, project_folder: str, workflow_context: Optional[Dict[str, Any]] = None) -> LiteratureWorkflowResult:
         """
         Execute the complete literature phase workflow.
         
@@ -232,11 +234,30 @@ class LiteratureWorkflow:
             )
             
             # Build context that gets enriched by each agent
-            context = {
+            context: Dict[str, Any] = {
                 "project_folder": project_folder,
                 "project_data": project_data,
                 "research_overview": research_overview,
             }
+
+            if isinstance(workflow_context, dict) and workflow_context:
+                # Allow callers to pass in additional configuration.
+                # Explicit keys in workflow_context override existing context values, including core keys.
+                context.update(workflow_context)
+
+            # Optional Step 0: Local evidence pipeline (discover -> ingest -> parse -> write parsed.json -> extract evidence)
+            pipeline_cfg = EvidencePipelineConfig.from_context(context)
+            if pipeline_cfg.enabled:
+                logger.info("Step 0/5: Running local evidence pipeline...")
+                try:
+                    pipeline_result = run_local_evidence_pipeline(project_folder=project_folder, config=pipeline_cfg)
+                    context["source_ids"] = pipeline_result.get("source_ids", [])
+                    context["evidence_pipeline_result"] = pipeline_result
+                except Exception as e:
+                    # Best-effort: keep the literature workflow running even if local evidence fails.
+                    msg = f"Local evidence pipeline error: {e}"
+                    logger.warning(msg)
+                    result.errors.append(msg)
             
             # Step 1: Hypothesis Development
             logger.info("Step 1/5: Developing hypothesis...")
@@ -320,6 +341,34 @@ class LiteratureWorkflow:
                 span.set_attribute("agent", "LiteratureSynthesizer")
                 span.set_attribute("model_tier", "sonnet")
                 try:
+                    gate_cfg = EvidenceGateConfig.from_context(context)
+                    if gate_cfg.require_evidence:
+                        try:
+                            enforce_evidence_gate(
+                                project_folder=context.get("project_folder", ""),
+                                source_ids=context.get("source_ids"),
+                                config=gate_cfg,
+                            )
+                        except EvidenceGateError as e:
+                            result.errors.append(str(e))
+                            span.set_attribute("error", str(e))
+                            return LiteratureWorkflowResult(
+                                success=False,
+                                project_id=project_id,
+                                project_folder=project_folder,
+                                hypothesis_result=result.hypothesis_result,
+                                literature_search_result=result.literature_search_result,
+                                literature_synthesis_result=None,
+                                paper_structure_result=None,
+                                project_plan_result=None,
+                                consistency_check_result=None,
+                                readiness_assessment=None,
+                                total_tokens=result.total_tokens,
+                                total_time=result.total_time,
+                                errors=result.errors,
+                                files_created=result.files_created,
+                            )
+
                     is_cached, cached_data = (False, None)
                     if cache:
                         is_cached, cached_data = cache.get_if_valid("literature_synthesis", context)

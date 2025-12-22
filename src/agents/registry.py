@@ -493,6 +493,35 @@ AGENT_REGISTRY: Dict[str, AgentSpec] = {
         max_execution_seconds=60,  # Fast assessment
         typical_execution_range=(5, 30),
     ),
+
+    "A16": AgentSpec(
+        id="A16",
+        name="EvidenceExtractor",
+        class_name="EvidenceExtractorAgent",
+        module_path="src.agents.evidence_extractor",
+        model_tier=ModelTier.HAIKU,
+        capabilities=[
+            AgentCapability.DATA_ANALYSIS,
+            AgentCapability.DATA_VALIDATION,
+        ],
+        input_schema=AgentInputSchema(
+            required=["project_folder", "source_id"],
+            optional=["max_items", "locator", "append_to_ledger"],
+            description="Extracts schema-valid evidence items from parsed source artifacts",
+        ),
+        output_schema=AgentOutputSchema(
+            content_type="structured",
+            structured_fields=["source_id", "evidence_count", "evidence_path"],
+            files_created=["sources/<source_id>/evidence.json"],
+            description="Evidence extraction summary and artifact path",
+        ),
+        description="Reads sources/<source_id>/parsed.json and writes sources/<source_id>/evidence.json",
+        can_call=[],
+        supports_revision=False,
+        uses_extended_thinking=False,
+        max_execution_seconds=30,
+        typical_execution_range=(1, 10),
+    ),
 }
 
 
@@ -638,6 +667,7 @@ class AgentRegistry:
             "Phase 3 - Gap Resolution": ["A10", "A11"],
             "Quality Assurance": ["A12", "A13", "A14"],
             "Project Tracking": ["A15"],
+            "Evidence Pipeline": ["A16"],
         }
         
         for phase_name, agent_ids in phases.items():
