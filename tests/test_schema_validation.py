@@ -7,8 +7,12 @@ Author: Gia Tenica*
 for more information see: https://giatenica.com
 """
 
+import json
+from unittest.mock import patch
+
 import pytest
 from src.utils.schema_validation import (
+    validate_against_schema,
     validate_evidence_item,
     is_valid_evidence_item,
 )
@@ -130,3 +134,34 @@ def test_validate_evidence_item_rejects_span_ordering_end_char_before_start_char
     item["locator"]["span"] = {"start_char": 10, "end_char": 9}
     with pytest.raises(ValueError, match="end_char"):
         validate_evidence_item(item)
+
+
+@pytest.mark.unit
+def test_validate_evidence_item_accepts_optional_context_field():
+    item = _valid_item()
+    item["context"] = "This quote appears in the introduction section."
+    validate_evidence_item(item)
+
+
+@pytest.mark.unit
+def test_validate_against_schema_raises_when_schema_missing():
+    with pytest.raises(FileNotFoundError, match="Schema not found"):
+        validate_against_schema({"x": 1}, "definitely_missing.schema.json")
+
+
+@pytest.mark.unit
+def test_load_schema_raises_on_invalid_json():
+    payload = _valid_item()
+    with patch("src.utils.schema_validation.json.load") as mock_load:
+        mock_load.side_effect = json.JSONDecodeError("bad", "{", 1)
+        with pytest.raises(ValueError, match="Failed to load schema"):
+            validate_against_schema(payload, "evidence_item.schema.json")
+
+
+@pytest.mark.unit
+def test_load_schema_raises_when_schema_not_object():
+    payload = _valid_item()
+    with patch("src.utils.schema_validation.json.load") as mock_load:
+        mock_load.return_value = []
+        with pytest.raises(ValueError, match="must be a JSON object"):
+            validate_against_schema(payload, "evidence_item.schema.json")
