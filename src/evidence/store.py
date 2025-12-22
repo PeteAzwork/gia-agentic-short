@@ -25,6 +25,7 @@ from loguru import logger
 
 from src.utils.validation import validate_project_folder
 from src.utils.schema_validation import validate_evidence_item
+from src.utils.filesystem import source_id_to_dirname
 
 
 @dataclass(frozen=True)
@@ -97,26 +98,11 @@ class EvidenceStore:
         if ".." in source_id:
             raise ValueError("source_id must not contain '..'")
 
-    def _source_id_dirname(self, source_id: str) -> str:
-        """Map a source_id to a filesystem-safe directory name.
-
-        The source_id is an identifier; this mapping avoids characters that are
-        problematic on some filesystems (e.g., ':' on Windows).
-        """
-        safe = []
-        for ch in source_id:
-            if ch.isalnum() or ch in {"-", "_", "."}:
-                safe.append(ch)
-            else:
-                safe.append("_")
-        dirname = "".join(safe).strip("_")
-        return dirname or "source"
-
     def source_paths(self, source_id: str) -> EvidenceSourcePaths:
         """Resolve per-source storage paths for a given source_id."""
         self._validate_source_id(source_id)
         p = self.project_paths()
-        source_dir = p.sources_dir / self._source_id_dirname(source_id)
+        source_dir = p.sources_dir / source_id_to_dirname(source_id)
         return EvidenceSourcePaths(
             source_dir=source_dir,
             raw_dir=source_dir / "raw",

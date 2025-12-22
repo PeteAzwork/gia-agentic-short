@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
+from src.utils.filesystem import source_id_to_dirname
 from src.utils.validation import validate_project_folder, validate_path
 
 
@@ -115,16 +116,6 @@ class SourceFetcherTool:
         self.hash_contents = hash_contents
         self.sources_subdir = sources_subdir
 
-    def _source_id_dirname(self, source_id: str) -> str:
-        safe = []
-        for ch in source_id:
-            if ch.isalnum() or ch in {"-", "_", "."}:
-                safe.append(ch)
-            else:
-                safe.append("_")
-        dirname = "".join(safe).strip("_")
-        return dirname or "source"
-
     def discover_sources(self) -> List[LocalSource]:
         """Discover files under the project folder.
 
@@ -209,7 +200,7 @@ class SourceFetcherTool:
         src_path = self.project_folder / source.relative_path
         validate_path(src_path, must_exist=True, must_be_file=True, base_dir=self.project_folder)
 
-        source_dirname = self._source_id_dirname(source.source_id)
+        source_dirname = source_id_to_dirname(source.source_id)
         raw_dir = self.project_folder / self.sources_subdir / source_dirname / "raw"
         raw_dir.mkdir(parents=True, exist_ok=True)
 
