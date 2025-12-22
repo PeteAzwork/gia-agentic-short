@@ -14,6 +14,7 @@ for more information see: https://giatenica.com
 
 import io
 import json
+import os
 import re
 import shutil
 import sys
@@ -33,6 +34,12 @@ sys.path.insert(0, str(ROOT_DIR))
 PORT = 8080
 USER_INPUT_DIR = str(ROOT_DIR / "user-input")
 STATIC_DIR = str(ROOT_DIR)
+
+# Safety limits for local intake server.
+# These are generous defaults intended to prevent accidental zip bombs.
+MAX_UPLOAD_MB = int(os.getenv("GIA_MAX_UPLOAD_MB", "2048"))
+MAX_ZIP_FILES = int(os.getenv("GIA_MAX_ZIP_FILES", "20000"))
+MAX_ZIP_TOTAL_MB = int(os.getenv("GIA_MAX_ZIP_TOTAL_MB", "2048"))
 
 
 class ResearchIntakeHandler(SimpleHTTPRequestHandler):
@@ -60,6 +67,14 @@ class ResearchIntakeHandler(SimpleHTTPRequestHandler):
                 return
 
             content_length = int(self.headers.get("Content-Length", 0))
+            max_bytes = MAX_UPLOAD_MB * 1024 * 1024
+            if content_length <= 0:
+                self.send_error(400, "Missing Content-Length")
+                return
+            if content_length > max_bytes:
+                self.send_error(413, f"Upload too large (max {MAX_UPLOAD_MB} MB)")
+                return
+
             body = self.rfile.read(content_length)
 
             form_data, files = self.parse_multipart(content_type, body)
@@ -162,10 +177,30 @@ class ResearchIntakeHandler(SimpleHTTPRequestHandler):
 
         try:
             with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                total_uncompressed = 0
+                file_count = 0
                 for member in zf.infolist():
                     member_name = member.filename
                     if ".." in member_name or member_name.startswith(("/", "\\")):
                         continue
+
+                    # Skip directories
+                    if getattr(member, "is_dir", lambda: False)():
+                        continue
+
+                    file_count += 1
+                    if file_count > MAX_ZIP_FILES:
+                        break
+
+                    # Guard against zip bombs via uncompressed size.
+                    try:
+                        total_uncompressed += int(member.file_size)
+                    except Exception:
+                        continue
+
+                    if total_uncompressed > (MAX_ZIP_TOTAL_MB * 1024 * 1024):
+                        break
+
                     zf.extract(member, tmp_dir)
             raw_data_dir = project_path / "data" / "raw data"
             for item in tmp_dir.rglob("*"):

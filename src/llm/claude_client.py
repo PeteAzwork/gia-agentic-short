@@ -31,9 +31,20 @@ import httpx
 from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-def _load_env_file_lenient() -> None:
-    """Load .env from repo root without raising or printing parse warnings."""
-    env_path = Path(__file__).resolve().parents[2] / ".env"
+def load_env_file_lenient(env_path: Optional[Path] = None) -> None:
+    """Load key=value pairs from a .env file into the process environment.
+
+    This helper is intentionally lenient:
+    - It ignores invalid lines
+    - It does not raise on read errors
+    - It never overrides already-set environment variables
+
+    Security note:
+    This function is not called automatically at import time.
+    Call it explicitly from CLI entrypoints (scripts) if desired.
+    """
+    if env_path is None:
+        env_path = Path(__file__).resolve().parents[2] / ".env"
     if not env_path.exists():
         return
 
@@ -60,7 +71,9 @@ def _load_env_file_lenient() -> None:
         os.environ.setdefault(key, value)
 
 
-_load_env_file_lenient()
+    def _load_env_file_lenient() -> None:
+        """Backward-compatible alias for older imports."""
+        load_env_file_lenient()
 
 
 class ModelTier(Enum):
@@ -274,6 +287,9 @@ class ClaudeClient:
             default_model: Default model tier (OPUS, SONNET, HAIKU) or string
             enable_caching: Whether to enable prompt caching
         """
+        if api_key is None and os.getenv("GIA_LOAD_ENV_FILE") == "1":
+            load_env_file_lenient()
+
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         if not self.api_key:
             raise ValueError("ANTHROPIC_API_KEY not found in environment")
@@ -413,8 +429,23 @@ class ClaudeClient:
         
         if system_content:
             kwargs["system"] = system_content
-        
-        response = self.client.messages.create(**kwargs)
+
+        @retry(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=1, max=10),
+            retry=retry_if_exception_type(
+                (
+                    anthropic.RateLimitError,
+                    anthropic.APIConnectionError,
+                    anthropic.InternalServerError,
+                )
+            ),
+            reraise=True,
+        )
+        def _make_request():
+            return self.client.messages.create(**kwargs)
+
+        response = _make_request()
         
         # Track usage
         self.usage.add(response.usage.model_dump())

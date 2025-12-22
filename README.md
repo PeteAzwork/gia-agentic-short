@@ -27,7 +27,7 @@ This project implements an agentic research pipeline using the Claude 4.5 model 
 
 - Workflows validate the project folder and handle missing or invalid `project.json` without crashing.
 - Edison is treated as an optional external dependency; when it is unavailable, the workflow records a failure for that stage and downstream synthesis produces a scaffold output.
-- LLM-generated code execution (gap resolution) runs in a subprocess and sanitizes environment variables to avoid leaking API keys.
+- LLM-generated code execution (gap resolution) runs in a subprocess with a minimal environment and isolated Python mode (`-I`). It is designed to reduce accidental secret leakage; it is not a full sandbox.
 
 ## Architecture
 
@@ -138,6 +138,8 @@ OTLP_ENDPOINT=http://localhost:4318/v1/traces
 
 Note: If `EDISON_API_KEY` is not set, the literature workflow will skip Edison calls. The literature synthesis stage will produce a scaffold output so the workflow can still complete.
 
+Note: Library imports do not automatically read `.env`. The CLI scripts in `scripts/` call `load_env_file_lenient()` on startup. If you create a `ClaudeClient` directly, either export the needed environment variables, call `load_env_file_lenient()` yourself, or set `GIA_LOAD_ENV_FILE=1`.
+
 ## Usage
 
 ### Run Research Workflow
@@ -150,7 +152,7 @@ Note: If `EDISON_API_KEY` is not set, the literature workflow will skip Edison c
 .venv/bin/python scripts/run_gap_resolution.py user-input/your-project
 
 # Phase 2: Literature and planning workflow (requires Phase 1)
-.venv/bin/python -m src.agents.literature_workflow user-input/your-project
+.venv/bin/python scripts/run_literature_workflow.py user-input/your-project
 ```
 
 ### Start Intake Server

@@ -20,7 +20,7 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict
 from dataclasses import dataclass, field
 
 from .base import BaseAgent, AgentResult
@@ -160,26 +160,54 @@ class CodeExecutor:
         """
         self.timeout = timeout
         self.max_output_size = max_output_size
-        self.python_path = self._find_python()
+        # Prefer the current interpreter to ensure dependencies match the runtime.
+        self.python_path = sys.executable
 
         # By default, do not leak the parent process environment (API keys, tokens)
         # into LLM-generated code execution.
         self.sanitize_env = True
-    
-    def _find_python(self) -> str:
-        """Find the Python executable in the virtual environment."""
-        # Try common virtual environment locations
-        venv_paths = [
-            Path(os.getcwd()) / ".venv" / "bin" / "python",
-            Path(__file__).parent.parent.parent / ".venv" / "bin" / "python",
-            Path(sys.executable),
-        ]
-        
-        for path in venv_paths:
-            if path.exists():
-                return str(path)
-        
-        return "python3"  # Fallback
+
+    def _build_subprocess_env(self) -> Dict[str, str]:
+        """Build a minimal environment for subprocess execution.
+
+        Goal:
+        - Reduce accidental secret leakage (API keys, tokens, passwords)
+        - Keep enough environment for Python and common native deps to run
+        """
+        # Start with a small allowlist rather than inheriting everything.
+        allowlist = {
+            "PATH",
+            "HOME",
+            "LANG",
+            "LC_ALL",
+            "LC_CTYPE",
+            "TMPDIR",
+            "TEMP",
+            "TMP",
+            "SSL_CERT_FILE",
+            "SSL_CERT_DIR",
+            "REQUESTS_CA_BUNDLE",
+            "CURL_CA_BUNDLE",
+        }
+
+        env: Dict[str, str] = {}
+        parent = os.environ
+        for key in allowlist:
+            value = parent.get(key)
+            if value is not None:
+                env[key] = value
+
+        # Defensive defaults.
+        env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
+        env.setdefault("PYTHONNOUSERSITE", "1")
+
+        # If sanitize_env is disabled, fall back to full inheritance.
+        if not self.sanitize_env:
+            inherited = dict(parent)
+            inherited.update(env)
+            return inherited
+
+        return env
     
     def execute(self, code: str, working_dir: Optional[str] = None) -> CodeExecutionResult:
         """
@@ -193,81 +221,63 @@ class CodeExecutor:
             CodeExecutionResult with stdout, stderr, and status
         """
         start_time = time.time()
-        
-        # Create temporary file for the code
-        with tempfile.NamedTemporaryFile(
-            mode='w',
-            encoding='utf-8',
-            suffix='.py',
-            delete=False,
-            dir=working_dir
-        ) as f:
-            f.write(code)
-            temp_path = f.name
-        
-        try:
-            env = os.environ.copy()
-            if self.sanitize_env:
-                for key in list(env.keys()):
-                    upper = key.upper()
-                    if upper in {"ANTHROPIC_API_KEY", "GITHUB_TOKEN"}:
-                        env.pop(key, None)
-                        continue
-                    if upper.endswith("_API_KEY"):
-                        env.pop(key, None)
-                        continue
-                    if upper.endswith("_TOKEN"):
-                        env.pop(key, None)
 
-            # Execute in subprocess with timeout
-            result = subprocess.run(
-                [self.python_path, temp_path],
-                capture_output=True,
-                text=True,
-                timeout=self.timeout,
-                cwd=working_dir or os.getcwd(),
-                env=env,
-                stdin=subprocess.DEVNULL,
-            )
-            
-            stdout = result.stdout[:self.max_output_size]
-            stderr = result.stderr[:self.max_output_size]
-            
-            execution_time = time.time() - start_time
-            
-            return CodeExecutionResult(
-                success=result.returncode == 0,
-                code=code,
-                stdout=stdout,
-                stderr=stderr,
-                execution_time=execution_time,
-                error=stderr if result.returncode != 0 else None,
-            )
-            
-        except subprocess.TimeoutExpired:
-            return CodeExecutionResult(
-                success=False,
-                code=code,
-                stdout="",
-                stderr="",
-                execution_time=self.timeout,
-                error=f"Execution timed out after {self.timeout} seconds",
-            )
-        except Exception as e:
-            return CodeExecutionResult(
-                success=False,
-                code=code,
-                stdout="",
-                stderr=str(e),
-                execution_time=time.time() - start_time,
-                error=str(e),
-            )
-        finally:
-            # Clean up temporary file
+        # Always write the snippet into an isolated temp folder rather than the project.
+        with tempfile.TemporaryDirectory(prefix="gia_code_exec_") as sandbox_dir:
+            temp_path = str(Path(sandbox_dir) / "snippet.py")
+            Path(temp_path).write_text(code, encoding="utf-8")
+
             try:
-                os.unlink(temp_path)
-            except (OSError, FileNotFoundError):
-                pass  # File may have already been deleted
+                env = self._build_subprocess_env()
+
+                # Execute in subprocess with timeout.
+                # -I reduces PYTHONPATH/user-site influence, while still allowing site-packages.
+                result = subprocess.run(
+                    [self.python_path, "-I", "-B", temp_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=self.timeout,
+                    cwd=working_dir or os.getcwd(),
+                    env=env,
+                    stdin=subprocess.DEVNULL,
+                    close_fds=True,
+                    start_new_session=True,
+                )
+
+                stdout = (result.stdout or "")[: self.max_output_size]
+                stderr = (result.stderr or "")[: self.max_output_size]
+
+                execution_time = time.time() - start_time
+
+                return CodeExecutionResult(
+                    success=result.returncode == 0,
+                    code=code,
+                    stdout=stdout,
+                    stderr=stderr,
+                    execution_time=execution_time,
+                    error=stderr if result.returncode != 0 else None,
+                )
+
+            except subprocess.TimeoutExpired as e:
+                stdout = ((e.stdout or "") if isinstance(e.stdout, str) else "")[: self.max_output_size]
+                stderr = ((e.stderr or "") if isinstance(e.stderr, str) else "")[: self.max_output_size]
+                return CodeExecutionResult(
+                    success=False,
+                    code=code,
+                    stdout=stdout,
+                    stderr=stderr,
+                    execution_time=time.time() - start_time,
+                    error=f"Execution timed out after {self.timeout} seconds",
+                )
+            except Exception as e:
+                return CodeExecutionResult(
+                    success=False,
+                    code=code,
+                    stdout="",
+                    stderr=str(e),
+                    execution_time=time.time() - start_time,
+                    error=str(e),
+                )
 
 
 class GapResolverAgent(BaseAgent):

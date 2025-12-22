@@ -9,6 +9,9 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_DIR))
 
+from src.llm.claude_client import load_env_file_lenient  # noqa: E402
+load_env_file_lenient()
+
 from src.agents.gap_resolution_workflow import GapResolutionWorkflow  # noqa: E402
 
 

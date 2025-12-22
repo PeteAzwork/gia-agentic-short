@@ -85,6 +85,18 @@ results-driven, machine-first, paradigm-shifting, novel, unique, utilize, impact
 - Do not mutate `sys.path` inside `src/` modules; if a script needs repo-root imports, do it in `scripts/` or run via `python -m`.
 - Validate workflow inputs using `src.utils.validation.validate_project_folder()` and handle JSON/file read errors without crashing.
 
+## Environment Loading
+- Do not auto-load `.env` at import time inside `src/` modules.
+- CLI entrypoints in `scripts/` may call `load_env_file_lenient()` to support local runs.
+- When instantiating `ClaudeClient` directly, prefer explicit env configuration; `GIA_LOAD_ENV_FILE=1` is available as an opt-in convenience.
+
+## Code Execution Safety
+- LLM-generated code execution in `CodeExecutor` must run with a minimal environment and should avoid inheriting secrets from the parent process.
+- Treat subprocess execution as a risk boundary; do not claim it is a full sandbox.
+
+## Intake Server Safety
+- `scripts/research_intake_server.py` enforces size limits via env vars: `GIA_MAX_UPLOAD_MB`, `GIA_MAX_ZIP_FILES`, `GIA_MAX_ZIP_TOTAL_MB`.
+
 ## Testing Guidelines (REQUIRED for new features)
 When adding new features or modules, ALWAYS set up tests following this pattern:
 
