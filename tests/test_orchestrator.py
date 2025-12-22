@@ -398,3 +398,89 @@ class TestIterativeRevisionLoop:
             # execute_with_review should only be used for the initial execution.
             assert orchestrator.execute_with_review.await_count == 1
             assert dummy_agent.revise.await_count == 1
+
+
+class TestReviewExistingResult:
+    """Tests for reviewing pre-existing results."""
+
+    @pytest.mark.asyncio
+    async def test_review_existing_result_skips_on_failed_result(self, orchestrator):
+        failed = AgentResult(
+            agent_name="DummyAgent",
+            task_type=TaskType.CODING,
+            model_tier=ModelTier.SONNET,
+            success=False,
+            content="",
+            error="boom",
+        )
+
+        feedback = await orchestrator._review_existing_result(
+            agent_id="A01",
+            result=failed,
+            content_type="general",
+        )
+
+        assert feedback.revision_required is True
+        assert feedback.quality_score.overall == 0.0
+
+    @pytest.mark.asyncio
+    async def test_review_existing_result_self_critique_shortcuts(self, orchestrator):
+        orchestrator.config.review_threshold = 0.5
+        orchestrator.config.auto_review = True
+
+        ok = AgentResult(
+            agent_name="DummyAgent",
+            task_type=TaskType.CODING,
+            model_tier=ModelTier.SONNET,
+            success=True,
+            content="hello",
+        )
+
+        dummy_agent = MagicMock()
+        dummy_agent.self_critique = AsyncMock(return_value={"scores": {"overall": 0.9}, "summary": "great"})
+        orchestrator._get_agent_instance = MagicMock(return_value=dummy_agent)
+
+        orchestrator.review_result = AsyncMock()
+
+        feedback = await orchestrator._review_existing_result(
+            agent_id="A01",
+            result=ok,
+            content_type="general",
+        )
+
+        assert feedback.request_id == "self_critique"
+        assert feedback.revision_required is False
+        assert orchestrator.review_result.await_count == 0
+
+    @pytest.mark.asyncio
+    async def test_review_existing_result_falls_back_when_agent_missing(self, orchestrator):
+        orchestrator.config.auto_review = True
+        orchestrator._get_agent_instance = MagicMock(return_value=None)
+
+        ok = AgentResult(
+            agent_name="DummyAgent",
+            task_type=TaskType.CODING,
+            model_tier=ModelTier.SONNET,
+            success=True,
+            content="hello",
+        )
+
+        orchestrator.review_result = AsyncMock(
+            return_value=FeedbackResponse(
+                request_id="r1",
+                reviewer_agent_id="A12",
+                quality_score=QualityScore(overall=0.3),
+                issues=[],
+                summary="reviewed",
+                revision_required=True,
+            )
+        )
+
+        feedback = await orchestrator._review_existing_result(
+            agent_id="A01",
+            result=ok,
+            content_type="general",
+        )
+
+        assert feedback.request_id == "r1"
+        assert orchestrator.review_result.await_count == 1

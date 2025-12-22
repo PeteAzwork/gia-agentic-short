@@ -330,6 +330,37 @@ class AgentOrchestrator:
                 revision_required=True,
             )
     
+    async def _self_critique_shortcut(
+        self,
+        agent_id: str,
+        result: AgentResult,
+    ) -> Optional[FeedbackResponse]:
+        """Optionally skip formal review based on the agent's self-critique score."""
+        if not self.config.auto_review:
+            return None
+
+        agent = self._get_agent_instance(agent_id)
+        if not agent:
+            return None
+
+        self_critique = await agent.self_critique(result)
+        self_score = self_critique.get("scores", {}).get("overall", 0)
+        if self_score >= self.config.review_threshold:
+            logger.info(
+                f"Skipping review: self-critique score {self_score:.2f} "
+                f">= threshold {self.config.review_threshold}"
+            )
+            return FeedbackResponse(
+                request_id="self_critique",
+                reviewer_agent_id=agent_id,
+                quality_score=QualityScore(overall=self_score),
+                issues=[],
+                summary=self_critique.get("summary", "Self-critique passed"),
+                revision_required=False,
+            )
+
+        return None
+
     async def execute_with_review(
         self,
         agent_id: str,
@@ -361,27 +392,9 @@ class AgentOrchestrator:
                 revision_required=True,
             )
         
-        # Optionally do self-critique first
-        if self.config.auto_review:
-            agent = self._get_agent_instance(agent_id)
-            if agent:
-                self_critique = await agent.self_critique(result)
-                self_score = self_critique.get("scores", {}).get("overall", 0)
-                
-                # Skip formal review if self-critique is high
-                if self_score >= self.config.review_threshold:
-                    logger.info(
-                        f"Skipping review: self-critique score {self_score:.2f} "
-                        f">= threshold {self.config.review_threshold}"
-                    )
-                    return result, FeedbackResponse(
-                        request_id="self_critique",
-                        reviewer_agent_id=agent_id,
-                        quality_score=QualityScore(overall=self_score),
-                        issues=[],
-                        summary=self_critique.get("summary", "Self-critique passed"),
-                        revision_required=False,
-                    )
+        shortcut = await self._self_critique_shortcut(agent_id, result)
+        if shortcut:
+            return result, shortcut
         
         # Formal review
         feedback = await self.review_result(result, content_type)
@@ -404,21 +417,9 @@ class AgentOrchestrator:
                 summary="Skipped review due to execution failure",
                 revision_required=True,
             )
-
-        if self.config.auto_review:
-            agent = self._get_agent_instance(agent_id)
-            if agent:
-                self_critique = await agent.self_critique(result)
-                self_score = self_critique.get("scores", {}).get("overall", 0)
-                if self_score >= self.config.review_threshold:
-                    return FeedbackResponse(
-                        request_id="self_critique",
-                        reviewer_agent_id=agent_id,
-                        quality_score=QualityScore(overall=self_score),
-                        issues=[],
-                        summary=self_critique.get("summary", "Self-critique passed"),
-                        revision_required=False,
-                    )
+        shortcut = await self._self_critique_shortcut(agent_id, result)
+        if shortcut:
+            return shortcut
 
         return await self.review_result(result, content_type)
     

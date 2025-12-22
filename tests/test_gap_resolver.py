@@ -373,6 +373,17 @@ This will load and display the data."""
         assert len(resolution.execution_attempts) == 2
         assert "failed after" in resolution.findings.lower()
 
+    @pytest.mark.unit
+    def test_extract_status_from_interpretation(self, mock_client):
+        """Test STATUS parsing from interpretation text."""
+        agent = GapResolverAgent(client=mock_client)
+
+        assert agent._extract_status_from_interpretation("STATUS: RESOLVED") == "RESOLVED"
+        assert agent._extract_status_from_interpretation("status: partially resolved") == "PARTIALLY_RESOLVED"
+        assert agent._extract_status_from_interpretation("  STATUS: unresolved  ") == "UNRESOLVED"
+        assert agent._extract_status_from_interpretation("FINDINGS: none") is None
+        assert agent._extract_status_from_interpretation("STATUS: PENDING") is None
+
 
 class TestOverviewUpdaterAgent:
     """Tests for OverviewUpdaterAgent class."""

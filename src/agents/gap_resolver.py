@@ -542,12 +542,19 @@ Return ONLY the complete Python code wrapped in a single ```python fenced block.
                 prompt = base_code_prompt
             else:
                 stderr_snippet = (last_exec.stderr if last_exec else "")[:4000]
-                error_message = (last_exec.error if last_exec else "Unknown execution failure")
+                error_message = (
+                    last_exec.error
+                    if last_exec
+                    else "Previous attempt failed to generate valid code; execution did not run."
+                )
                 prompt = f"""The previously generated code failed to execute.
 
 GAP ID: {gap.get('id')}
 DESCRIPTION: {gap.get('description')}
 APPROACH: {gap.get('code_approach')}
+
+AVAILABLE DATA FILES:
+{json.dumps(data_paths, indent=2)}
 
 FAILED CODE:
 ```python
@@ -649,6 +656,9 @@ Provide a structured interpretation."""
         - STATUS: RESOLVED
         - STATUS: PARTIALLY_RESOLVED
         - STATUS: UNRESOLVED
+
+        Returns:
+            Optional[str]: One of "RESOLVED", "PARTIALLY_RESOLVED", "UNRESOLVED", or None.
         """
         for line in (interpretation or "").splitlines():
             if line.strip().upper().startswith("STATUS:"):
@@ -656,7 +666,7 @@ Provide a structured interpretation."""
                 value = value.replace(" ", "_")
                 if value in {"RESOLVED", "PARTIALLY_RESOLVED", "UNRESOLVED"}:
                     return value
-                return value or None
+                return None
         return None
     
     def _extract_code(self, response: str) -> Optional[str]:
