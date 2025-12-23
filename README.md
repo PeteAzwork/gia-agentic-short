@@ -167,7 +167,7 @@ Note: Library imports do not automatically read `.env`. The CLI scripts in `scri
 ```bash
 # Start web server for project submission
 .venv/bin/python scripts/research_intake_server.py
-# Open http://localhost:8080
+# Open http://localhost:8080 (or set GIA_INTAKE_PORT)
 ```
 
 ### Project Structure
@@ -240,7 +240,9 @@ thinking, response = client.chat_with_thinking(
 ```
 gia-agentic-short/
 ├── src/
-│   ├── agents/                 # 15 specialized agents (A1-A15)
+│   ├── config.py                # Centralized configuration
+│   ├── tracing.py               # OpenTelemetry setup
+│   ├── agents/                  # 16 specialized agents (A01-A16)
 │   │   ├── base.py              # BaseAgent with best practices
 │   │   ├── best_practices.py    # Standards for all agents
 │   │   ├── registry.py          # Agent registry and capabilities
@@ -250,31 +252,41 @@ gia-agentic-short/
 │   │   ├── workflow.py          # Phase 1 research workflow
 │   │   ├── gap_resolution_workflow.py  # Gap resolution workflow
 │   │   ├── literature_workflow.py  # Phase 2 literature workflow
-│   │   ├── data_analyst.py      # A1: Data extraction
-│   │   ├── research_explorer.py # A2: Project analysis
-│   │   ├── gap_analyst.py       # A3: Gap identification
-│   │   ├── overview_generator.py # A4: Overview generation
-│   │   ├── hypothesis_developer.py # A5: Hypothesis development
-│   │   ├── literature_search.py # A6: Literature search
-│   │   ├── literature_synthesis.py # A7: Literature synthesis
-│   │   ├── paper_structure.py   # A8: Paper structuring
-│   │   ├── project_planner.py   # A9: Project planning
+│   │   ├── data_analyst.py      # A01: Data extraction
+│   │   ├── research_explorer.py # A02: Project analysis
+│   │   ├── gap_analyst.py       # A03: Gap identification
+│   │   ├── overview_generator.py # A04: Overview generation
+│   │   ├── hypothesis_developer.py # A05: Hypothesis development
+│   │   ├── literature_search.py # A06: Literature search
+│   │   ├── literature_synthesis.py # A07: Literature synthesis
+│   │   ├── paper_structure.py   # A08: Paper structuring
+│   │   ├── project_planner.py   # A09: Project planning
 │   │   ├── gap_resolver.py      # A10: Gap resolution
 │   │   ├── critical_review.py   # A12: Quality review
 │   │   ├── style_enforcer.py    # A13: Style enforcement
 │   │   ├── consistency_checker.py # A14: Consistency checking
-│   │   └── readiness_assessor.py # A15: Readiness assessment
+│   │   ├── readiness_assessor.py # A15: Readiness assessment
+│   │   └── evidence_extractor.py # A16: Evidence extraction
+│   ├── evidence/                # Evidence pipeline
+│   │   ├── extraction.py        # Evidence extraction
+│   │   ├── parser.py            # Document parsing
+│   │   ├── pipeline.py          # Evidence pipeline
+│   │   ├── store.py             # Evidence storage
+│   │   └── gates.py             # Evidence gates
 │   ├── llm/
 │   │   ├── claude_client.py     # Claude API with caching & batching
 │   │   └── edison_client.py     # Edison Scientific API client
-│   ├── utils/
-│   │   ├── validation.py        # Path and input validation
-│   │   ├── time_tracking.py     # Execution time tracking
-│   │   ├── readiness_scoring.py # Project readiness scoring
-│   │   ├── consistency_validation.py # Cross-document consistency
-│   │   └── style_validation.py  # Style guide enforcement
-│   └── tracing.py               # OpenTelemetry setup
-├── tests/                       # pytest test suite (179 unit tests, 343 total)
+│   ├── schemas/                 # JSON schemas for validation
+│   └── utils/
+│       ├── validation.py        # Path and input validation
+│       ├── schema_validation.py # JSON schema validation
+│       ├── time_tracking.py     # Execution time tracking
+│       ├── readiness_scoring.py # Project readiness scoring
+│       ├── consistency_validation.py # Cross-document consistency
+│       ├── style_validation.py  # Style guide enforcement
+│       ├── filesystem.py        # Filesystem helpers
+│       └── project_io.py        # Project I/O utilities
+├── tests/                       # pytest test suite (236 unit tests)
 ├── evaluation/                  # Test queries and metrics
 ├── user-input/                  # Research projects
 ├── scripts/
@@ -282,6 +294,7 @@ gia-agentic-short/
 │   ├── run_gap_resolution.py    # Gap resolution runner
 │   ├── run_literature_workflow.py # Phase 2 workflow runner
 │   └── research_intake_server.py # Web intake form server
+└── docs/                        # Additional documentation
 ```
 
 ## Building New Agents
@@ -330,6 +343,9 @@ class MyAgent(BaseAgent):
 
 # Run specific test file
 .venv/bin/python -m pytest tests/test_agents.py -v
+
+# Run with coverage
+.venv/bin/python -m pytest tests/ -v --cov=src
 ```
 
 ## Cost Management
@@ -344,9 +360,10 @@ class MyAgent(BaseAgent):
 
 ### API Resilience
 
-- **Retry Logic**: Exponential backoff for transient failures
-- **Timeouts**: HTTP client timeouts configured in the LLM client
-- **Rate Limiting**: Retries on transient failures and rate limiting
+- **Retry Logic**: Exponential backoff for transient failures (Claude and Edison)
+- **Timeouts**: Centralized timeout configuration in `src/config.py`
+- **Rate Limiting**: Automatic retry on rate limits with backoff
+- **Thread-Safe**: Token usage tracking is thread-safe for concurrent operations
 
 ### Cache System
 
@@ -354,12 +371,20 @@ class MyAgent(BaseAgent):
 - **Optimized I/O**: Combined validation and loading in single read
 - **Hash Validation**: SHA256 input hashing detects stale cache entries
 - **24-Hour TTL**: Configurable expiration with stage-aware dependencies
+- **Lock Cleanup**: Orphaned lock files are automatically cleaned up
+
+### Tracing
+
+- **OpenTelemetry**: Full distributed tracing support
+- **Graceful Shutdown**: Tracer provider cleanup via atexit handler
+- **HTTP Instrumentation**: Automatic tracing of API calls
 
 ### Security
 
-- **Path Validation**: All file paths are validated against project boundaries
-- **No Code Execution**: Agents cannot execute arbitrary code
-- **Input Sanitization**: All user inputs are validated before processing
+- **Path Validation**: All file paths validated against project boundaries
+- **Zip Extraction**: Secure extraction with path traversal prevention
+- **Code Execution**: Subprocess isolation with minimal environment
+- **Input Sanitization**: All user inputs validated before processing
 - **API Key Protection**: Keys loaded from environment, never logged
 
 ## Troubleshooting
@@ -371,7 +396,7 @@ class MyAgent(BaseAgent):
 | `ANTHROPIC_API_KEY not set` | Add key to `.env` file or environment |
 | `Rate limit exceeded` | Retry logic handles automatically; wait if persistent |
 | `Cache validation failed` | Delete `.workflow_cache/` folder and re-run |
-| `Edison API timeout` | Check network; API has 30s timeout |
+| `Edison API timeout` | Check network; API has retry logic with exponential backoff |
 | `Path validation error` | Ensure project folder exists and has correct structure |
 
 ### Debug Mode

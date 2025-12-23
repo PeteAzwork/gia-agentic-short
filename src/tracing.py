@@ -10,7 +10,10 @@ Author: Gia Tenica*
 for more information see: https://giatenica.com
 """
 
+import atexit
 import os
+from typing import Optional
+
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -18,10 +21,25 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 from opentelemetry.sdk.resources import Resource, SERVICE_NAME
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
-# Service configuration
-SERVICE_NAME_VALUE = "gia-research-agents"
-OTLP_ENDPOINT = os.getenv("OTLP_ENDPOINT", "http://localhost:4318/v1/traces")
-ENABLE_TRACING = os.getenv("ENABLE_TRACING", "false").lower() == "true"
+from src.config import TRACING
+
+# Use centralized config
+SERVICE_NAME_VALUE = TRACING.SERVICE_NAME
+OTLP_ENDPOINT = TRACING.OTLP_ENDPOINT
+ENABLE_TRACING = TRACING.ENABLED
+
+# Track provider for cleanup
+_provider: Optional[TracerProvider] = None
+
+
+def _cleanup_tracing() -> None:
+    """Shutdown the tracer provider to flush pending spans."""
+    global _provider
+    if _provider is not None:
+        try:
+            _provider.shutdown()
+        except Exception:
+            pass  # Best effort cleanup
 
 
 def setup_tracing(service_name: str = SERVICE_NAME_VALUE) -> trace.Tracer:
@@ -34,13 +52,15 @@ def setup_tracing(service_name: str = SERVICE_NAME_VALUE) -> trace.Tracer:
     Returns:
         Configured tracer instance
     """
+    global _provider
+    
     # Create resource with service name
     resource = Resource.create({
         SERVICE_NAME: service_name,
     })
     
     # Set up tracer provider
-    provider = TracerProvider(resource=resource)
+    _provider = TracerProvider(resource=resource)
     
     # Configure OTLP exporter (HTTP)
     otlp_exporter = OTLPSpanExporter(
@@ -48,13 +68,16 @@ def setup_tracing(service_name: str = SERVICE_NAME_VALUE) -> trace.Tracer:
     )
     
     # Add batch processor for efficient export
-    provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+    _provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
     
     # Set as global tracer provider
-    trace.set_tracer_provider(provider)
+    trace.set_tracer_provider(_provider)
     
     # Instrument HTTP clients (for Anthropic API calls)
     HTTPXClientInstrumentor().instrument()
+    
+    # Register cleanup on exit to flush pending spans
+    atexit.register(_cleanup_tracing)
     
     return trace.get_tracer(service_name)
 

@@ -30,16 +30,16 @@ import uuid
 ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_DIR))
 
+from src.config import INTAKE_SERVER  # noqa: E402
 
-PORT = 8080
 USER_INPUT_DIR = str(ROOT_DIR / "user-input")
 STATIC_DIR = str(ROOT_DIR)
 
-# Safety limits for local intake server.
-# These are generous defaults intended to prevent accidental zip bombs.
-MAX_UPLOAD_MB = int(os.getenv("GIA_MAX_UPLOAD_MB", "2048"))
-MAX_ZIP_FILES = int(os.getenv("GIA_MAX_ZIP_FILES", "20000"))
-MAX_ZIP_TOTAL_MB = int(os.getenv("GIA_MAX_ZIP_TOTAL_MB", "2048"))
+# Use centralized config for safety limits
+PORT = INTAKE_SERVER.PORT
+MAX_UPLOAD_MB = INTAKE_SERVER.MAX_UPLOAD_MB
+MAX_ZIP_FILES = INTAKE_SERVER.MAX_ZIP_FILES
+MAX_ZIP_TOTAL_MB = INTAKE_SERVER.MAX_ZIP_TOTAL_MB
 
 
 class ResearchIntakeHandler(SimpleHTTPRequestHandler):
@@ -181,7 +181,11 @@ class ResearchIntakeHandler(SimpleHTTPRequestHandler):
                 file_count = 0
                 for member in zf.infolist():
                     member_name = member.filename
-                    if ".." in member_name or member_name.startswith(("/", "\\")):
+                    
+                    # Security: Resolve the destination path and verify it stays within tmp_dir
+                    # This prevents path traversal via "..", symlinks, or encoded paths
+                    dest_path = (tmp_dir / member_name).resolve()
+                    if not dest_path.is_relative_to(tmp_dir.resolve()):
                         continue
 
                     # Skip directories

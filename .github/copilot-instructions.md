@@ -101,7 +101,13 @@ results-driven, machine-first, paradigm-shifting, novel, unique, utilize, impact
 - Treat subprocess execution as a risk boundary; do not claim it is a full sandbox.
 
 ## Intake Server Safety
-- `scripts/research_intake_server.py` enforces size limits via env vars: `GIA_MAX_UPLOAD_MB`, `GIA_MAX_ZIP_FILES`, `GIA_MAX_ZIP_TOTAL_MB`.
+- `scripts/research_intake_server.py` enforces size limits via centralized config in `src/config.py`
+- Environment overrides: `GIA_INTAKE_PORT`, `GIA_MAX_UPLOAD_MB`, `GIA_MAX_ZIP_FILES`, `GIA_MAX_ZIP_TOTAL_MB`
+
+## Centralized Configuration
+- Timeouts, filename limits, and server config are in `src/config.py`
+- Use `from src.config import TIMEOUTS, FILENAMES, INTAKE_SERVER, TRACING` for access
+- Do not hardcode timeout values; use centralized config constants
 
 ## Testing Guidelines (REQUIRED for new features)
 When adding new features or modules, ALWAYS set up tests following this pattern:

@@ -191,6 +191,12 @@ def extract_evidence_items(
     if max_items < 0:
         raise ValueError("max_items must be >= 0")
 
+    if min_excerpt_chars < 0:
+        raise ValueError("min_excerpt_chars must be >= 0")
+
+    if max_excerpt_chars <= 0:
+        raise ValueError("max_excerpt_chars must be positive")
+
     if locator is None:
         locator = _default_locator(source_id)
 

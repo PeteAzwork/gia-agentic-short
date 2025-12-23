@@ -186,38 +186,46 @@ MODELS = {
 
 @dataclass
 class TokenUsage:
-    """Track token usage across requests."""
+    """Track token usage across requests with thread-safe operations."""
     input_tokens: int = 0
     output_tokens: int = 0
     cache_creation_tokens: int = 0
     cache_read_tokens: int = 0
     thinking_tokens: int = 0
     
+    def __post_init__(self):
+        import threading
+        self._lock = threading.Lock()
+    
     @property
     def total_tokens(self) -> int:
-        return self.input_tokens + self.output_tokens
+        with self._lock:
+            return self.input_tokens + self.output_tokens
     
     @property
     def cache_savings(self) -> float:
         """Calculate percentage of tokens served from cache."""
-        total_input = self.input_tokens + self.cache_read_tokens
-        if total_input == 0:
-            return 0.0
-        return (self.cache_read_tokens / total_input) * 100
+        with self._lock:
+            total_input = self.input_tokens + self.cache_read_tokens
+            if total_input == 0:
+                return 0.0
+            return (self.cache_read_tokens / total_input) * 100
     
     def add(self, usage: dict):
-        """Add usage from API response."""
-        self.input_tokens += usage.get("input_tokens", 0)
-        self.output_tokens += usage.get("output_tokens", 0)
-        self.cache_creation_tokens += usage.get("cache_creation_input_tokens", 0)
-        self.cache_read_tokens += usage.get("cache_read_input_tokens", 0)
+        """Add usage from API response in a thread-safe manner."""
+        with self._lock:
+            self.input_tokens += usage.get("input_tokens", 0)
+            self.output_tokens += usage.get("output_tokens", 0)
+            self.cache_creation_tokens += usage.get("cache_creation_input_tokens", 0)
+            self.cache_read_tokens += usage.get("cache_read_input_tokens", 0)
     
     def estimate_cost(self, model: ModelTier) -> float:
         """Estimate cost in USD based on model pricing."""
-        info = MODELS[model]
-        input_cost = (self.input_tokens / 1_000_000) * info.input_price_per_mtok
-        output_cost = (self.output_tokens / 1_000_000) * info.output_price_per_mtok
-        return input_cost + output_cost
+        with self._lock:
+            info = MODELS[model]
+            input_cost = (self.input_tokens / 1_000_000) * info.input_price_per_mtok
+            output_cost = (self.output_tokens / 1_000_000) * info.output_price_per_mtok
+            return input_cost + output_cost
 
 
 @dataclass 
