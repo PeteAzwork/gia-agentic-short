@@ -328,23 +328,51 @@ class WorkflowCache:
     
     def clear(self, stage_name: Optional[str] = None):
         """
-        Clear cache entries.
+        Clear cache entries and associated lock files.
         
         Args:
             stage_name: Specific stage to clear, or None to clear all
         """
         if stage_name:
             cache_path = self._get_cache_path(stage_name)
+            lock_path = cache_path.with_suffix('.json.lock')
             if cache_path.exists():
                 cache_path.unlink()
                 logger.info(f"Cleared cache for {stage_name}")
+            # Clean up orphaned lock file
+            if lock_path.exists():
+                try:
+                    lock_path.unlink()
+                except OSError:
+                    pass
         else:
             # Clear all stages (Phase 1 and Phase 2)
             for stage in self.ALL_STAGES:
                 cache_path = self._get_cache_path(stage)
+                lock_path = cache_path.with_suffix('.json.lock')
                 if cache_path.exists():
                     cache_path.unlink()
+                # Clean up lock files
+                if lock_path.exists():
+                    try:
+                        lock_path.unlink()
+                    except OSError:
+                        pass
+            # Also clean any orphaned lock files
+            self._cleanup_orphaned_locks()
             logger.info("Cleared all workflow cache")
+    
+    def _cleanup_orphaned_locks(self) -> None:
+        """Remove lock files without corresponding cache files."""
+        for lock_file in self.cache_dir.glob("*.lock"):
+            # Check if the cache file exists
+            cache_file = lock_file.with_suffix('')  # Remove .lock
+            if not cache_file.exists():
+                try:
+                    lock_file.unlink()
+                    logger.debug(f"Removed orphaned lock: {lock_file.name}")
+                except OSError:
+                    pass
     
     def clear_from_stage(self, stage_name: str):
         """

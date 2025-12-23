@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Optional, Any, Union
 from loguru import logger
 
+from src.config import FILENAMES
+
 
 # Allowed base directories for project operations
 ALLOWED_BASE_DIRS = [
@@ -23,6 +25,9 @@ ALLOWED_BASE_DIRS = [
     "tmp",
     "temp",
 ]
+
+# Use centralized config for filename constraints
+MAX_FILENAME_LENGTH = FILENAMES.MAX_LENGTH
 
 
 def is_safe_path(path: Union[str, Path], base_dir: Optional[Union[str, Path]] = None) -> bool:
@@ -134,13 +139,13 @@ def validate_project_folder(project_folder: Union[str, Path]) -> Path:
     return path
 
 
-def sanitize_filename(filename: str, max_length: int = 255) -> str:
+def sanitize_filename(filename: str, max_length: int = MAX_FILENAME_LENGTH) -> str:
     """
     Sanitize a filename for safe file system operations.
     
     Args:
         filename: Original filename
-        max_length: Maximum allowed length
+        max_length: Maximum allowed length (default: 255 for ext4/HFS+)
         
     Returns:
         Sanitized filename

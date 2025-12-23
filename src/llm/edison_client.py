@@ -35,7 +35,9 @@ Author: Gia Tenica*
 for more information see: https://giatenica.com
 """
 
+import asyncio
 import os
+import threading
 from typing import Optional, List
 from dataclasses import dataclass, field
 from enum import Enum
@@ -44,10 +46,22 @@ import hashlib
 from edison_client import EdisonClient as OfficialEdisonClient
 from edison_client import JobNames as EdisonJobNames
 from loguru import logger
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # Track active/recent Edison requests to prevent duplicates
 _active_requests: dict[str, float] = {}  # query_hash -> start_time
-_request_lock = None  # Lazy-init asyncio.Lock
+_request_lock: Optional[asyncio.Lock] = None  # Lazy-init asyncio.Lock
+_lock_init = threading.Lock()  # Thread-safe lock initialization
+
+
+def _get_request_lock() -> asyncio.Lock:
+    """Get or create the async request lock in a thread-safe manner."""
+    global _request_lock
+    if _request_lock is None:
+        with _lock_init:
+            if _request_lock is None:
+                _request_lock = asyncio.Lock()
+    return _request_lock
 
 
 class JobStatus(Enum):
@@ -282,8 +296,7 @@ class EdisonClient:
         Returns:
             LiteratureResult with answer and citations
         """
-        global _request_lock, _active_requests
-        import asyncio
+        global _active_requests
         import time
         
         if not self._client:
@@ -301,12 +314,11 @@ class EdisonClient:
         # Generate hash for deduplication (based on query content)
         query_hash = hashlib.sha256(full_query.encode()).hexdigest()[:16]
         
-        # Lazy-init lock for thread safety
-        if _request_lock is None:
-            _request_lock = asyncio.Lock()
+        # Use thread-safe lock getter
+        request_lock = _get_request_lock()
         
         # Check for duplicate/concurrent requests
-        async with _request_lock:
+        async with request_lock:
             current_time = time.time()
             
             # Clean up old entries (older than 30 minutes)
@@ -336,14 +348,23 @@ class EdisonClient:
         try:
             logger.info(f"Submitting literature search to Edison: {query[:100]}...")
             
-            # Use async method from edison-client
+            # Use async method from edison-client with retry logic
             task_data = {
                 "name": EdisonJobNames.LITERATURE,
                 "query": full_query,
             }
             
+            @retry(
+                stop=stop_after_attempt(3),
+                wait=wait_exponential(multiplier=2, min=2, max=30),
+                retry=retry_if_exception_type((ConnectionError, TimeoutError, OSError)),
+                reraise=True,
+            )
+            async def _make_edison_request():
+                return await self._client.arun_tasks_until_done(task_data)
+            
             # arun_tasks_until_done waits for completion
-            task_response = await self._client.arun_tasks_until_done(task_data)
+            task_response = await _make_edison_request()
             
             processing_time = time.time() - start_time
             logger.info(f"Edison search completed in {processing_time:.1f}s (hash={query_hash[:8]})")
@@ -375,7 +396,7 @@ class EdisonClient:
         finally:
             # Remove from active requests after completion (success or failure)
             # Keep in tracking for 5 minutes to prevent rapid re-submission
-            async with _request_lock:
+            async with request_lock:
                 if query_hash in _active_requests:
                     # Update timestamp to mark completion time for dedup window
                     _active_requests[query_hash] = time.time()
