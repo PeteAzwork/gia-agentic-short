@@ -211,3 +211,52 @@ def test_is_valid_metric_record_boolean_helper():
     assert is_valid_metric_record(_valid_metric_record()) is True
     assert is_valid_metric_record({}) is False
     assert is_valid_metric_record("not a dict") is False
+
+
+@pytest.mark.unit
+def test_validate_metric_record_rejects_additional_properties():
+    record = _valid_metric_record()
+    record["unexpected"] = "nope"
+    with pytest.raises(ValueError, match="Additional properties"):
+        validate_metric_record(record)
+
+
+@pytest.mark.unit
+def test_validate_metric_record_rejects_invalid_datetime_format():
+    record = _valid_metric_record()
+    record["created_at"] = "not-a-datetime"
+    with pytest.raises(ValueError, match="created_at"):
+        validate_metric_record(record)
+
+
+@pytest.mark.unit
+def test_validate_metric_record_rejects_schema_version_mismatch():
+    record = _valid_metric_record()
+    record["schema_version"] = "2.0"
+    with pytest.raises(ValueError, match="schema_version"):
+        validate_metric_record(record)
+
+
+@pytest.mark.unit
+def test_validate_metric_record_rejects_empty_required_strings():
+    record = _valid_metric_record()
+    record["metric_key"] = ""
+    with pytest.raises(ValueError, match="metric_key"):
+        validate_metric_record(record)
+
+
+@pytest.mark.unit
+def test_validate_metric_record_accepts_optional_fields():
+    record = _valid_metric_record()
+    record["unit"] = "bps"
+    record["description"] = "Example optional description"
+    record["metadata"] = {"note": "unit test"}
+    validate_metric_record(record)
+
+
+@pytest.mark.unit
+def test_validate_metric_record_rejects_invalid_value_type():
+    record = _valid_metric_record()
+    record["value"] = "not-a-number"
+    with pytest.raises(ValueError, match="value"):
+        validate_metric_record(record)
