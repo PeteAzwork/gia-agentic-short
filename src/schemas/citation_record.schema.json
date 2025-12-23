@@ -30,9 +30,18 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "doi": {"type": ["string", "null"], "minLength": 1},
-        "arxiv": {"type": ["string", "null"], "minLength": 1},
-        "url": {"type": ["string", "null"], "minLength": 1}
+        "doi": {
+          "oneOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "null"}
+          ]
+        },
+        "arxiv": {
+          "oneOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "null"}
+          ]
+        }
       }
     },
     "title": {
@@ -54,8 +63,7 @@
     "issue": {"type": "string"},
     "pages": {"type": "string"},
     "publisher": {"type": "string"},
-    "url": {"type": "string"},
-    "doi": {"type": "string"},
+    "url": {"type": "string", "minLength": 1},
     "abstract": {"type": "string"},
     "keywords": {
       "type": "array",

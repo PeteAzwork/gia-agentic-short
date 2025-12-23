@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
+from typing import Iterator
 
 import pytest
 
 from src.citations.registry import (
     citation_keys,
     ensure_citations_registry_exists,
+    has_verified_citations,
     load_citations,
     make_minimal_citation_record,
     save_citations,
@@ -20,7 +22,7 @@ from src.utils.schema_validation import is_valid_citation_record, validate_citat
 
 
 @pytest.fixture
-def temp_project_folder() -> str:
+def temp_project_folder() -> Iterator[str]:
     with tempfile.TemporaryDirectory() as tmpdir:
         (Path(tmpdir) / "project.json").write_text(
             json.dumps({"id": "p1", "title": "t", "research_question": "q"}),
@@ -131,3 +133,28 @@ def test_citation_keys_sorted_unique(temp_project_folder: str):
 
     save_citations(temp_project_folder, [rec1, rec2])
     assert citation_keys(temp_project_folder) == ["AKey", "BKey"]
+
+
+@pytest.mark.unit
+def test_has_verified_citations(temp_project_folder: str):
+    assert has_verified_citations(temp_project_folder) is False
+
+    rec1 = make_minimal_citation_record(
+        citation_key="Key1",
+        title="T1",
+        authors=["A"],
+        year=2001,
+        status="unverified",
+    )
+    save_citations(temp_project_folder, [rec1])
+    assert has_verified_citations(temp_project_folder) is False
+
+    rec2 = make_minimal_citation_record(
+        citation_key="Key2",
+        title="T2",
+        authors=["B"],
+        year=2002,
+        status="verified",
+    )
+    save_citations(temp_project_folder, [rec1, rec2])
+    assert has_verified_citations(temp_project_folder) is True
