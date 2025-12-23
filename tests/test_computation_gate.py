@@ -18,6 +18,34 @@ def _write_metrics(project_folder, metrics):
 
 
 @pytest.mark.unit
+def test_computation_gate_config_from_context_parses_and_sanitizes_values():
+    cfg = ComputationGateConfig.from_context(
+        {
+            "computation_gate": {
+                "enabled": True,
+                "on_missing_metrics": "downgrade",
+            }
+        }
+    )
+    assert cfg.enabled is True
+    assert cfg.on_missing_metrics == "downgrade"
+
+    bad = ComputationGateConfig.from_context(
+        {
+            "computation_gate": {
+                "enabled": True,
+                "on_missing_metrics": "nope",
+            }
+        }
+    )
+    assert bad.enabled is True
+    assert bad.on_missing_metrics == "block"
+
+    defaulted = ComputationGateConfig.from_context({"computation_gate": "not-a-dict"})
+    assert defaulted == ComputationGateConfig()
+
+
+@pytest.mark.unit
 def test_computation_gate_disabled_is_permissive(temp_project_folder):
     _write_claims(
         temp_project_folder,

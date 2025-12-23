@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Set, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from loguru import logger
 
@@ -67,7 +67,7 @@ def _load_json_list(path: Path) -> Tuple[List[Any], Optional[str]]:
     return payload, None
 
 
-def _find_computed_metric_keys(claims: List[Any]) -> Tuple[Set[str], int, int]:
+def _find_computed_metric_keys(claims: List[Any]) -> Tuple[set[str], int, int]:
     metric_keys: set[str] = set()
     computed_claims = 0
     invalid_claims = 0
@@ -94,7 +94,7 @@ def _find_computed_metric_keys(claims: List[Any]) -> Tuple[Set[str], int, int]:
     return metric_keys, computed_claims, invalid_claims
 
 
-def _load_metric_keys(metrics: List[Any]) -> Tuple[Set[str], int]:
+def _load_metric_keys(metrics: List[Any]) -> Tuple[set[str], int]:
     metric_keys: set[str] = set()
     invalid_metrics = 0
 
