@@ -34,7 +34,7 @@ Title: Sprint 1: Implement EvidenceStore filesystem layout and helpers
 
 Body:
 - Add `src/evidence/store.py` implementing a filesystem-first EvidenceStore
-- Ensure the following paths exist for a project:
+- The following paths must exist for a project:
   - `sources/<source_id>/raw/`
   - `sources/<source_id>/parsed.json`
   - `sources/<source_id>/evidence.json`
