@@ -42,7 +42,7 @@ Each item below should be a separate PR.
 
 ### PR 2: EvidenceStore filesystem implementation
 - Add `src/evidence/store.py` with an `EvidenceStore` API
-- Ensure layout creation:
+- Layout creation includes:
   - `sources/<source_id>/raw/`
   - `sources/<source_id>/parsed.json`
   - `sources/<source_id>/evidence.json`
