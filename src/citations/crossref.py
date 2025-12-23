@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
 import httpx
@@ -21,6 +21,10 @@ from src.config import TIMEOUTS
 
 
 CROSSREF_API_BASE = "https://api.crossref.org"
+
+# Fallback year used when Crossref does not provide any publication date.
+# This should be treated as "unknown" in downstream logic.
+CITATION_FALLBACK_YEAR = 1900
 
 
 class CrossrefError(RuntimeError):
@@ -108,7 +112,10 @@ class CrossrefClient:
         if resp.status_code >= 400:
             raise CrossrefError(f"Crossref returned HTTP {resp.status_code}")
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except ValueError as e:
+            raise CrossrefError(f"Failed to parse Crossref response as JSON: {e}")
         message = data.get("message")
         if not isinstance(message, dict):
             raise CrossrefError("Crossref response missing 'message' object")
@@ -153,7 +160,10 @@ class CrossrefClient:
         if resp.status_code >= 400:
             raise CrossrefError(f"Crossref returned HTTP {resp.status_code}")
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except ValueError as e:
+            raise CrossrefError(f"Failed to parse Crossref response as JSON: {e}")
         message = data.get("message")
         if not isinstance(message, dict):
             raise CrossrefError("Crossref response missing 'message' object")
@@ -220,7 +230,7 @@ def crossref_work_to_citation_record(
     """Convert a Crossref work object to a CitationRecord."""
     title = _pick_first_str(work.get("title")) or "(missing title)"
     authors = _format_authors(work)
-    year = _extract_year(work) or 1900
+    year = _extract_year(work) or CITATION_FALLBACK_YEAR
 
     doi = work.get("DOI")
     identifiers: Dict[str, Any] = {}
