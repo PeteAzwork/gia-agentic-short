@@ -16,6 +16,58 @@ def test_load_test_queries_parses_builtin_dataset():
 
 
 @pytest.mark.unit
+def test_load_test_queries_rejects_invalid_json(tmp_path):
+    p = tmp_path / "bad.json"
+    p.write_text("{not json}", encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_test_queries(p)
+
+
+@pytest.mark.unit
+def test_load_test_queries_rejects_duplicate_ids(tmp_path):
+    p = tmp_path / "dupes.json"
+    p.write_text(
+        json.dumps(
+            [
+                {"id": "x", "title": "T1", "research_question": "RQ1"},
+                {"id": "x", "title": "T2", "research_question": "RQ2"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        load_test_queries(p)
+
+
+@pytest.mark.unit
+def test_load_test_queries_rejects_empty_or_missing_fields(tmp_path):
+    p = tmp_path / "empty.json"
+    p.write_text(json.dumps([]), encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_test_queries(p)
+
+    p2 = tmp_path / "missing.json"
+    p2.write_text(json.dumps([{"id": "x", "title": "T"}]), encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_test_queries(p2)
+
+
+@pytest.mark.unit
+def test_load_test_queries_rejects_unsafe_ids(tmp_path):
+    p = tmp_path / "unsafe.json"
+    p.write_text(
+        json.dumps(
+            [
+                {"id": "../evil", "title": "T", "research_question": "RQ"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        load_test_queries(p)
+
+
+@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_run_evaluation_suite_dry_writes_report_and_per_query_projects(tmp_path):
     queries_path = Path(__file__).parent.parent / "evaluation" / "test_queries.json"

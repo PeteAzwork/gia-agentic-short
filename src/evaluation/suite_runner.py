@@ -1,6 +1,6 @@
 """Evaluation suite runner.
 
-This module provides a small, deterministic harness for sweeping the built-in
+This module provides a small, deterministic runner for sweeping the built-in
 `evaluation/test_queries.json` dataset.
 
 It supports a safe dry-run mode that does not require external API keys and does
@@ -34,8 +34,6 @@ class EvaluationSuiteConfig:
 
     mode: RunMode = "dry"
     output_root: Path = Path("outputs") / "evaluation_suite"
-    include_phase2: bool = False
-
     disable_edison_by_default: bool = True
 
     @property
@@ -143,6 +141,11 @@ def load_test_queries(path: str | Path) -> List[EvaluationQuery]:
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate query ids")
 
+    # Ensure IDs are safe for filesystem paths.
+    for q in out:
+        if any(ch in q.id for ch in ("/", "\\")):
+            raise ValueError(f"unsafe query id: {q.id}")
+
     return out
 
 
@@ -190,9 +193,19 @@ async def run_evaluation_suite(
     config: EvaluationSuiteConfig,
     run_id: Optional[str] = None,
 ) -> Tuple[EvaluationSuiteReport, Path]:
-    """Run the evaluation suite.
+    """Run the evaluation suite over a set of test queries.
 
-    Returns (report, report_path).
+    Behavior by mode:
+    - dry: creates per-query isolated project folders and a summary report; no LLM calls
+    - phase1: runs Phase 1 workflow for each query
+    - phase1+phase2: runs both Phase 1 and Phase 2 workflows for each query
+
+    Side effects:
+    - creates directories under Path(config.output_root) / run_id
+    - writes report.json into the run directory
+
+    Returns:
+        (report, report_path)
     """
 
     started_at = _utc_now_iso()
@@ -203,8 +216,24 @@ async def run_evaluation_suite(
 
     results: List[EvaluationQueryResult] = []
 
+    ResearchWorkflow = None
+    LiteratureWorkflow = None
+    EdisonClient = None
+
+    if config.normalized_mode != "dry":
+        from src.agents.workflow import ResearchWorkflow as _ResearchWorkflow
+
+        ResearchWorkflow = _ResearchWorkflow
+
+        if config.normalized_mode == "phase1+phase2":
+            from src.agents.literature_workflow import LiteratureWorkflow as _LiteratureWorkflow
+            from src.llm.edison_client import EdisonClient as _EdisonClient
+
+            LiteratureWorkflow = _LiteratureWorkflow
+            EdisonClient = _EdisonClient
+
     for idx, q in enumerate(queries, start=1):
-        query_dir = root / f"{idx:03d}_{q.id}_{_slug(q.title)}"
+        query_dir = root / f"{idx:03d}_{_slug(q.id)}_{_slug(q.title)}"
         query_dir.mkdir(parents=True, exist_ok=True)
 
         project_dir = _materialize_project_folder(base_dir=query_dir, query=q)
@@ -231,15 +260,16 @@ async def run_evaluation_suite(
         error: Optional[str] = None
 
         try:
-            from src.agents.workflow import ResearchWorkflow
+            if ResearchWorkflow is None:
+                raise RuntimeError("ResearchWorkflow not available")
 
             wf1 = ResearchWorkflow()
             wf1_result = await wf1.run(str(project_dir))
             phase1_success = bool(wf1_result.success)
 
             if config.normalized_mode == "phase1+phase2":
-                from src.agents.literature_workflow import LiteratureWorkflow
-                from src.llm.edison_client import EdisonClient
+                if LiteratureWorkflow is None or EdisonClient is None:
+                    raise RuntimeError("Phase 2 dependencies not available")
 
                 edison_client = None
                 if config.disable_edison_by_default:
@@ -280,7 +310,7 @@ async def run_evaluation_suite(
         started_at=started_at,
         finished_at=finished_at,
         mode=config.normalized_mode,
-        output_root=str((Path(config.output_root).resolve() / rid)),
+        output_root=str(Path(config.output_root).resolve() / rid),
         run_id=rid,
         queries_total=len(results),
         queries_success=queries_success,
