@@ -211,8 +211,8 @@ def check_literature_gate(
             "min_evidence_items_total": cfg.min_evidence_items_total,
             "sources_below_min": [],
             "min_evidence_items_per_source": cfg.min_evidence_items_per_source,
-            "citations_invalid_items": 0,
-            "evidence_invalid_items": 0,
+            "citations_invalid_items": citations_invalid,
+            "evidence_invalid_items": evidence_invalid,
             "evidence_files_scanned": evidence_files_scanned,
             "citations_file_present": citations_file_present,
         }
@@ -220,7 +220,7 @@ def check_literature_gate(
     sources_below_min: list[str] = []
     if cfg.min_evidence_items_per_source > 0:
         sources_below_min = sorted(
-            [sid for sid, cnt in per_source_counts.items() if int(cnt) < int(cfg.min_evidence_items_per_source)]
+            [sid for sid, cnt in per_source_counts.items() if cnt < cfg.min_evidence_items_per_source]
         )
 
     meets_citations = verified_citations >= cfg.min_verified_citations
