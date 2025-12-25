@@ -101,11 +101,12 @@ class DataAnalystAgent(BaseAgent):
         visited_files = 0
         
         for file_path in data_folder.rglob("*"):
-            if visited_files >= max_files:
-                break
-
             if not file_path.is_file() or file_path.name.startswith("."):
                 continue
+
+            visited_files += 1
+            if visited_files > max_files:
+                break
 
             try:
                 rel_parts = file_path.relative_to(data_folder).parts
@@ -116,7 +117,6 @@ class DataAnalystAgent(BaseAgent):
             if any(part.startswith(".") for part in rel_parts[:-1]):
                 continue
 
-            visited_files += 1
             file_analysis = await self._analyze_file(file_path)
             if file_analysis:
                 analysis_results.append(file_analysis)
