@@ -71,3 +71,101 @@ async def test_introduction_writer_writes_deterministic_output(temp_project_fold
     assert "\\section{Introduction}" in content1
     assert "\\cite{Smith2020}" in content1
     assert content1.endswith("\n")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_introduction_writer_blocks_on_missing_evidence(temp_project_folder):
+    save_citations(
+        temp_project_folder,
+        [
+            make_minimal_citation_record(
+                citation_key="Smith2020",
+                title="Test Paper",
+                authors=["Smith"],
+                year=2020,
+                status="verified",
+            )
+        ],
+        validate=True,
+    )
+
+    agent = IntroductionWriterAgent(client=None)
+    ctx = {
+        "project_folder": str(temp_project_folder),
+        "introduction_writer": {"on_missing_evidence": "block"},
+        "source_citation_map": {},
+    }
+
+    result = await agent.execute(ctx)
+    assert result.success is False
+    assert (temp_project_folder / "outputs/sections/introduction.tex").exists() is False
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_introduction_writer_blocks_on_missing_citation(temp_project_folder):
+    _write_evidence(temp_project_folder, "src_1")
+
+    agent = IntroductionWriterAgent(client=None)
+    ctx = {
+        "project_folder": str(temp_project_folder),
+        "source_citation_map": {"src_1": "Unknown2025"},
+        "introduction_writer": {"on_missing_citation": "block"},
+    }
+
+    result = await agent.execute(ctx)
+    assert result.success is False
+    assert "Missing canonical citation key" in (result.error or "")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_introduction_writer_blocks_on_unverified_citation_when_required(temp_project_folder):
+    save_citations(
+        temp_project_folder,
+        [
+            make_minimal_citation_record(
+                citation_key="Smith2020",
+                title="Test Paper",
+                authors=["Smith"],
+                year=2020,
+                status="unverified",
+            )
+        ],
+        validate=True,
+    )
+    _write_evidence(temp_project_folder, "src_1")
+
+    agent = IntroductionWriterAgent(client=None)
+    ctx = {
+        "project_folder": str(temp_project_folder),
+        "source_citation_map": {"src_1": "Smith2020"},
+        "introduction_writer": {
+            "require_verified_citations": True,
+            "on_missing_citation": "block",
+        },
+    }
+
+    result = await agent.execute(ctx)
+    assert result.success is False
+    assert "Unverified citation key blocked" in (result.error or "")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_introduction_writer_disabled_writes_section(temp_project_folder):
+    agent = IntroductionWriterAgent(client=None)
+    ctx = {
+        "project_folder": str(temp_project_folder),
+        "introduction_writer": {"enabled": False},
+    }
+
+    result = await agent.execute(ctx)
+    assert result.success is True
+
+    out_path = temp_project_folder / "outputs/sections/introduction.tex"
+    assert out_path.exists()
+    tex = out_path.read_text(encoding="utf-8")
+    assert "\\section{Introduction}" in tex
+    assert result.structured_data["metadata"]["enabled"] is False
