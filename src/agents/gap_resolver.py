@@ -193,12 +193,7 @@ class CodeExecutor:
         """
         start_time = time.time()
 
-        def _to_text(value: object) -> str:
-            if isinstance(value, str):
-                return value
-            if isinstance(value, (bytes, bytearray)):
-                return bytes(value).decode("utf-8", errors="replace")
-            return ""
+        from src.utils.subprocess_text import to_text
 
         # Always write the snippet into an isolated temp folder rather than the project.
         with tempfile.TemporaryDirectory(prefix="gia_code_exec_") as sandbox_dir:
@@ -239,8 +234,8 @@ class CodeExecutor:
                 )
 
             except subprocess.TimeoutExpired as e:
-                stdout = _to_text(e.stdout)[: self.max_output_size]
-                stderr = _to_text(e.stderr)[: self.max_output_size]
+                stdout = to_text(e.stdout)[: self.max_output_size]
+                stderr = to_text(e.stderr)[: self.max_output_size]
                 return CodeExecutionResult(
                     success=False,
                     code=code,
