@@ -30,6 +30,13 @@ from .gates import (
     find_referenced_citation_keys,
 )
 
+from .accuracy_gate import (
+    CitationAccuracyGateConfig,
+    CitationAccuracyGateError,
+    check_citation_accuracy_gate,
+    enforce_citation_accuracy_gate,
+)
+
 __all__ = [
     "CrossrefClient",
     "CrossrefClientConfig",
@@ -51,4 +58,9 @@ __all__ = [
     "check_citation_gate",
     "enforce_citation_gate",
     "find_referenced_citation_keys",
+
+    "CitationAccuracyGateConfig",
+    "CitationAccuracyGateError",
+    "check_citation_accuracy_gate",
+    "enforce_citation_accuracy_gate",
 ]

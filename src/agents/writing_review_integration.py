@@ -25,6 +25,11 @@ from src.agents.base import AgentResult
 from src.agents.registry import AgentRegistry
 from src.evidence.gates import EvidenceGateConfig, EvidenceGateError, enforce_evidence_gate
 from src.citations.gates import CitationGateConfig, CitationGateError, enforce_citation_gate
+from src.citations.accuracy_gate import (
+    CitationAccuracyGateConfig,
+    CitationAccuracyGateError,
+    enforce_citation_accuracy_gate,
+)
 from src.claims.gates import ComputationGateConfig, ComputationGateError, enforce_computation_gate
 from src.literature.gates import LiteratureGateConfig, LiteratureGateError, enforce_literature_gate
 from src.analysis.gates import AnalysisGateConfig, AnalysisGateError, enforce_analysis_gate
@@ -215,6 +220,36 @@ async def run_writing_review_stage(context: Dict[str, Any]) -> WritingReviewStag
             gates=gates,
             review=None,
             error="Pre-writing citation gate blocked",
+        )
+
+    try:
+        accuracy_cfg = CitationAccuracyGateConfig.from_context(context)
+        accuracy_result = enforce_citation_accuracy_gate(project_folder=str(pf), config=accuracy_cfg)
+        gates["citation_accuracy_gate"] = {
+            "ok": True,
+            "enabled": bool(accuracy_cfg.enabled),
+            "action": accuracy_result.get("action"),
+            "checked_claims_total": accuracy_result.get("checked_claims_total"),
+            "failed_claims_total": accuracy_result.get("failed_claims_total"),
+            "skipped_missing_evidence_total": accuracy_result.get("skipped_missing_evidence_total"),
+        }
+    except CitationAccuracyGateError as e:
+        gates["citation_accuracy_gate"] = {"ok": False, "enabled": True, "error": str(e)}
+        safe_set_current_span_attributes(
+            {
+                "writing_review.needs_revision": True,
+                "writing_review.writers_ran": 0,
+                "writing_review.written_sections_total": 0,
+                "writing_review.error_category": "citation_accuracy_gate_blocked",
+            }
+        )
+        return WritingReviewStageResult(
+            success=False,
+            needs_revision=True,
+            written_section_relpaths=[],
+            gates=gates,
+            review=None,
+            error="Pre-writing citation accuracy gate blocked",
         )
 
     try:
