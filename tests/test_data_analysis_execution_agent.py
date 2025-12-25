@@ -111,3 +111,142 @@ async def test_results_writer_consumes_metrics_from_analysis(temp_project_folder
     assert r.success is True
     assert len((r.content or "").strip()) > 0
     assert "2.5" in (r.content or "")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_analysis_execution_agent_fails_on_missing_project_folder(temp_project_folder):
+    agent = DataAnalysisExecutionAgent(client=None)
+    result = await agent.execute({})
+    assert result.success is False
+    assert "project_folder" in (result.error or "")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_analysis_execution_agent_disabled_returns_success(temp_project_folder):
+    agent = DataAnalysisExecutionAgent(client=None)
+    result = await agent.execute({"project_folder": str(temp_project_folder), "analysis_execution": {"enabled": False}})
+    assert result.success is True
+    assert result.structured_data["metadata"]["enabled"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_analysis_execution_agent_blocks_on_script_failure(temp_project_folder):
+    analysis_dir = temp_project_folder / "analysis"
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+
+    script_text = "raise SystemExit(2)\n"
+    (analysis_dir / "fail.py").write_text(script_text, encoding="utf-8")
+
+    agent = DataAnalysisExecutionAgent(client=None)
+    ctx = {
+        "project_folder": str(temp_project_folder),
+        "analysis_execution": {"scripts": ["analysis/fail.py"], "on_script_failure": "block"},
+    }
+    result = await agent.execute(ctx)
+    assert result.success is False
+    assert "returncode=2" in (result.error or "")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_analysis_execution_agent_downgrades_on_script_failure_when_configured(temp_project_folder):
+    analysis_dir = temp_project_folder / "analysis"
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+
+    # Even if the script fails, the agent can downgrade instead of blocking.
+    script_text = "raise SystemExit(3)\n"
+    (analysis_dir / "fail.py").write_text(script_text, encoding="utf-8")
+
+    agent = DataAnalysisExecutionAgent(client=None)
+    ctx = {
+        "project_folder": str(temp_project_folder),
+        "analysis_execution": {"scripts": ["analysis/fail.py"], "on_script_failure": "downgrade", "on_missing_outputs": "downgrade"},
+    }
+    result = await agent.execute(ctx)
+    assert result.success is True
+    assert result.structured_data["metadata"]["action"] == "downgrade"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_analysis_execution_agent_blocks_on_missing_required_outputs(temp_project_folder):
+    analysis_dir = temp_project_folder / "analysis"
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+
+    # Writes metrics.json but no tables.
+    script_text = (
+        "import json\n"
+        "from pathlib import Path\n"
+        "p = Path('.')\n"
+        "(p / 'outputs').mkdir(parents=True, exist_ok=True)\n"
+        "metrics = [{'schema_version':'1.0','metric_key':'alpha','name':'Alpha','value':1.0,'unit':'pct','created_at':'2025-01-01T00:00:00Z'}]\n"
+        "(p / 'outputs' / 'metrics.json').write_text(json.dumps(metrics) + '\\n', encoding='utf-8')\n"
+    )
+    (analysis_dir / "no_tables.py").write_text(script_text, encoding="utf-8")
+
+    agent = DataAnalysisExecutionAgent(client=None)
+    ctx = {
+        "project_folder": str(temp_project_folder),
+        "analysis_execution": {"scripts": ["analysis/no_tables.py"], "on_missing_outputs": "block"},
+    }
+    result = await agent.execute(ctx)
+    assert result.success is False
+    assert "outputs/tables" in (result.error or "")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_analysis_execution_agent_downgrades_on_missing_required_outputs(temp_project_folder):
+    analysis_dir = temp_project_folder / "analysis"
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+
+    # Writes metrics.json but no tables.
+    script_text = (
+        "import json\n"
+        "from pathlib import Path\n"
+        "p = Path('.')\n"
+        "(p / 'outputs').mkdir(parents=True, exist_ok=True)\n"
+        "metrics = [{'schema_version':'1.0','metric_key':'alpha','name':'Alpha','value':1.0,'unit':'pct','created_at':'2025-01-01T00:00:00Z'}]\n"
+        "(p / 'outputs' / 'metrics.json').write_text(json.dumps(metrics) + '\\n', encoding='utf-8')\n"
+    )
+    (analysis_dir / "no_tables.py").write_text(script_text, encoding="utf-8")
+
+    agent = DataAnalysisExecutionAgent(client=None)
+    ctx = {
+        "project_folder": str(temp_project_folder),
+        "analysis_execution": {"scripts": ["analysis/no_tables.py"], "on_missing_outputs": "downgrade"},
+    }
+    result = await agent.execute(ctx)
+    assert result.success is True
+    assert result.structured_data["metadata"]["action"] == "downgrade"
+    assert "outputs/tables/*.tex" in result.structured_data["metadata"]["missing_outputs"]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_analysis_execution_agent_blocks_on_invalid_metrics_json(temp_project_folder):
+    analysis_dir = temp_project_folder / "analysis"
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+
+    # Writes invalid metrics.json (not a list) and writes a table.
+    script_text = (
+        "import json\n"
+        "from pathlib import Path\n"
+        "p = Path('.')\n"
+        "(p / 'outputs' / 'tables').mkdir(parents=True, exist_ok=True)\n"
+        "(p / 'outputs' / 'metrics.json').write_text(json.dumps({'bad': 1}) + '\\n', encoding='utf-8')\n"
+        "(p / 'outputs' / 'tables' / 't1.tex').write_text('x', encoding='utf-8')\n"
+    )
+    (analysis_dir / "bad_metrics.py").write_text(script_text, encoding="utf-8")
+
+    agent = DataAnalysisExecutionAgent(client=None)
+    ctx = {
+        "project_folder": str(temp_project_folder),
+        "analysis_execution": {"scripts": ["analysis/bad_metrics.py"], "on_missing_outputs": "block"},
+    }
+    result = await agent.execute(ctx)
+    assert result.success is False
+    assert "outputs/metrics.json" in (result.error or "")
