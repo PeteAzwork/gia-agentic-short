@@ -22,7 +22,7 @@ import json
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional
 
 from loguru import logger
 
@@ -119,6 +119,12 @@ def _safe_relpath(path: Path, root: Path) -> str:
 
 @dataclass(frozen=True)
 class DataFeasibilityConfig:
+    """Configuration for deterministic data feasibility validation.
+
+    NOTE: `expected_dtypes` is parsed but not enforced yet. It is reserved for
+    future type validation, and configuring it currently has no effect.
+    """
+
     enabled: bool = True
     files: Optional[List[str]] = None
     max_rows: int = 200_000
@@ -239,6 +245,18 @@ def _load_dataframe(path: Path, max_rows: int):
 def _summarize_dataframe(df, *, date_column: Optional[str]) -> Dict[str, Any]:
     import pandas as pd
 
+    def _timestamp_to_iso_date(ts: Any) -> Optional[str]:
+        if ts is None or pd.isna(ts):
+            return None
+        try:
+            return ts.to_pydatetime().date().isoformat()
+        except (TypeError, AttributeError, ValueError):
+            try:
+                ts_naive = ts.tz_localize(None)
+                return ts_naive.to_pydatetime().date().isoformat()
+            except (TypeError, AttributeError, ValueError):
+                return None
+
     columns = list(df.columns)
     dtypes = {str(c): str(df[c].dtype) for c in df.columns}
 
@@ -268,8 +286,8 @@ def _summarize_dataframe(df, *, date_column: Optional[str]) -> Dict[str, Any]:
             min_iso = None
             max_iso = None
         else:
-            min_iso = min_dt.to_pydatetime().date().isoformat()
-            max_iso = max_dt.to_pydatetime().date().isoformat()
+            min_iso = _timestamp_to_iso_date(min_dt)
+            max_iso = _timestamp_to_iso_date(max_dt)
 
         year_counts = series.dropna().dt.year.value_counts().to_dict()
         date_summary = {
@@ -493,10 +511,16 @@ class DataFeasibilityValidationAgent(BaseAgent):
 
         supported_suffixes = {".csv", ".parquet", ".xlsx", ".xls", ".dta", ".json"}
         files: List[Path] = []
+        config_path_errors: List[str] = []
+
+        data_dir_resolved = data_dir.resolve()
 
         if cfg.files:
             for rel in cfg.files:
                 candidate = (data_dir / rel).resolve()
+                if not candidate.is_relative_to(data_dir_resolved):
+                    config_path_errors.append(f"unsafe_file_path:{rel}")
+                    continue
                 if candidate.exists() and candidate.is_file() and candidate.suffix.lower() in supported_suffixes:
                     files.append(candidate)
         else:
@@ -529,6 +553,9 @@ class DataFeasibilityValidationAgent(BaseAgent):
         observed_start: Optional[str] = None
         observed_end: Optional[str] = None
         errors: List[str] = []
+
+        if config_path_errors:
+            errors.extend(sorted(config_path_errors))
 
         if not data_dir.exists() or not files:
             errors.append("no_data_files")
