@@ -243,6 +243,14 @@ def _extract_issue(work: Dict[str, Any]) -> Optional[str]:
 
 
 def _version_type_from_crossref_work_type(work: Dict[str, Any]) -> str:
+    """Map Crossref work types to project-level version types.
+
+    Crossref uses a variety of work types; we collapse them into a small set
+    compatible with CitationRecord.version.type.
+
+    Returns:
+        One of: published, preprint, working_paper, unknown.
+    """
     work_type = work.get("type")
     if not isinstance(work_type, str):
         return "unknown"
@@ -261,6 +269,19 @@ def _version_type_from_crossref_work_type(work: Dict[str, Any]) -> str:
 
 
 def _extract_related_dois_from_relation(work: Dict[str, Any], relation_keys: List[str]) -> List[str]:
+    """Extract related DOIs from Crossref relation metadata.
+
+    Args:
+        work: Crossref work payload.
+        relation_keys: Relation keys to scan (for example: is-preprint-of,
+            has-preprint, is-version-of, has-version).
+
+    Returns:
+        A deterministic (sorted, unique) list of normalized DOIs.
+
+    Notes:
+        Crossref relation entries may contain invalid DOIs; those are skipped.
+    """
     relation = work.get("relation")
     if not isinstance(relation, dict):
         return []
@@ -289,6 +310,11 @@ def _extract_related_dois_from_relation(work: Dict[str, Any], relation_keys: Lis
 
 
 def _extract_version_object(work: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Build a CitationRecord.version object from Crossref metadata.
+
+    Returns None when there is no meaningful version information to record
+    (unknown type and no related links).
+    """
     vtype = _version_type_from_crossref_work_type(work)
 
     published_links = _extract_related_dois_from_relation(work, ["is-preprint-of", "is-version-of"])

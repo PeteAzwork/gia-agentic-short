@@ -225,6 +225,21 @@ def _apply_version_preference_for_bibtex(
     by_doi: Dict[str, Dict[str, Any]],
     prefer_published: bool,
 ) -> Dict[str, Any]:
+    """Optionally prefer a published version when building BibTeX records.
+
+    This helper is used when the same work exists both as a preprint or
+    working paper and as a published version. It inspects the input record for
+    a version object and, if appropriate, overlays bibliographic fields from
+    the published record.
+
+    The preference logic only applies when:
+        - prefer_published is True.
+        - record.version.type is preprint or working_paper.
+        - record.version.related_published can be resolved via by_key or by_doi.
+
+    The returned record preserves the original citation_key to keep references
+    stable. The input record is never mutated.
+    """
     if not prefer_published:
         return record
 
@@ -455,6 +470,16 @@ def build_bibliography(
     prefer_published: bool = False,
 ) -> BibliographyPaths:
     """Build canonical bibliography artifacts for a project.
+
+    Args:
+        project_folder: Project root folder.
+        records: Optional list of CitationRecords to use (if None, loads from
+            bibliography/citations.json).
+        validate: Whether to validate records against the schema when reading
+            and writing.
+        prefer_published: If True, BibTeX entries for preprints/working papers
+            may use metadata from their related published versions while
+            preserving original citation keys.
 
     Writes:
         - bibliography/citations.json (deduped by DOI)
