@@ -193,6 +193,8 @@ class CodeExecutor:
         """
         start_time = time.time()
 
+        from src.utils.subprocess_text import to_text
+
         # Always write the snippet into an isolated temp folder rather than the project.
         with tempfile.TemporaryDirectory(prefix="gia_code_exec_") as sandbox_dir:
             temp_path = str(Path(sandbox_dir) / "snippet.py")
@@ -207,6 +209,8 @@ class CodeExecutor:
                     [self.python_path, "-I", "-B", temp_path],
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     timeout=self.timeout,
                     cwd=working_dir or os.getcwd(),
                     env=env,
@@ -230,8 +234,8 @@ class CodeExecutor:
                 )
 
             except subprocess.TimeoutExpired as e:
-                stdout = ((e.stdout or "") if isinstance(e.stdout, str) else "")[: self.max_output_size]
-                stderr = ((e.stderr or "") if isinstance(e.stderr, str) else "")[: self.max_output_size]
+                stdout = to_text(e.stdout)[: self.max_output_size]
+                stderr = to_text(e.stderr)[: self.max_output_size]
                 return CodeExecutionResult(
                     success=False,
                     code=code,

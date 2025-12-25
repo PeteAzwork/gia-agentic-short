@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 from src.config import INTAKE_SERVER
 from src.config import TIMEOUTS
 from src.utils.subprocess_env import build_minimal_subprocess_env
+from src.utils.subprocess_text import to_text
 from src.utils.project_layout import ensure_project_outputs_layout
 from src.utils.validation import validate_project_folder
 
@@ -137,6 +138,8 @@ def run_project_analysis_script(
             [sys.executable, "-I", "-B", _safe_relpath(sp, pf)],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             cwd=str(pf),
             env=env,
@@ -150,8 +153,8 @@ def run_project_analysis_script(
         success = returncode == 0
     except subprocess.TimeoutExpired as e:
         # Keep error deterministic (do not include platform-dependent details).
-        stdout = (e.stdout or "") if isinstance(e.stdout, str) else ""
-        stderr = (e.stderr or "") if isinstance(e.stderr, str) else ""
+        stdout = to_text(e.stdout)
+        stderr = to_text(e.stderr)
         if stderr:
             stderr = stderr.rstrip("\n") + "\n"
         stderr += f"Execution timed out after {timeout} seconds"
