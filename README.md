@@ -37,31 +37,30 @@ The pipeline is organized around phases and durable outputs:
 
 ```mermaid
 flowchart TD
-	A[Intake<br/>project folder + project.json] --> B[Workflow Orchestrator]
+  A[Intake\nproject folder + project.json] --> B[Workflow Orchestrator]
+  B --> C[Agents A01-A15\nanalysis, planning, QA]
+  C --> O[Artifacts\nMarkdown + JSON]
 
-	B --> C[Agents A01–A15<br/>analysis, planning, QA]
-	C --> O[Markdown + JSON artifacts]
+  B --> D[Evidence pipeline optional]
+  D --> D1[Source fetch + parse]
+  D1 --> D2[Evidence extraction A16]
+  D2 --> E[Evidence registry]
 
-	B --> D[Evidence Pipeline (optional)]
-	D --> D1[Source fetch + parse]
-	D1 --> D2[Evidence extraction A16]
-	D2 --> E[Evidence registry]
+  B --> F[Citations optional]
+  F --> F1[Citation registry]
 
-	B --> F[Citations (optional)]
-	F --> F1[Citation registry]
+  B --> G[Computation optional]
+  G --> G1[Analysis scripts]
+  G1 --> G2[Metrics outputs]
 
-	B --> G[Computation (optional)]
-	G --> G1[Analysis scripts]
-	G1 --> G2[Metrics outputs]
+  B --> H[Writing optional]
+  H --> H1[Section writers A17-A23]
+  H1 --> H2[Referee review A19]
+  H2 --> P[Paper sections]
 
-	B --> H[Writing (optional)]
-	H --> H1[Section writers A17–A23]
-	H1 --> H2[Referee review A19]
-	H2 --> P[Paper sections]
-
-	E --> H
-	F1 --> H
-	G2 --> H
+  E --> H
+  F1 --> H
+  G2 --> H
 ```
 
 For roadmap and contracts, see [docs/next_steps.md](docs/next_steps.md).
