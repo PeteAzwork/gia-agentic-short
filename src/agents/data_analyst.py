@@ -239,7 +239,7 @@ Provide a comprehensive data assessment for this research project."""
     
     def _analyze_json(self, file_path: Path) -> dict:
         """Analyze a JSON file."""
-        with open(file_path) as f:
+        with open(file_path, encoding="utf-8") as f:
             data = json.load(f)
         
         if isinstance(data, list) and len(data) > 0:

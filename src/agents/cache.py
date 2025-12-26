@@ -244,7 +244,7 @@ class WorkflowCache:
             return False, None
         
         try:
-            with open(cache_path) as f:
+            with open(cache_path, encoding="utf-8") as f:
                 data = json.load(f)
             
             entry = CacheEntry.from_dict(data)
@@ -300,7 +300,7 @@ class WorkflowCache:
         cache_path = self._get_cache_path(stage_name)
         
         try:
-            with open(cache_path) as f:
+            with open(cache_path, encoding="utf-8") as f:
                 data = json.load(f)
             
             entry = CacheEntry.from_dict(data)
@@ -335,7 +335,7 @@ class WorkflowCache:
         try:
             # Use file lock to prevent race conditions
             with FileLock(lock_path, timeout=30):
-                with open(cache_path, "w") as f:
+                with open(cache_path, "w", encoding="utf-8") as f:
                     json.dump(entry.to_dict(), f, indent=2, default=str)
             
             logger.info(f"Cached result for {stage_name}")
@@ -420,7 +420,7 @@ class WorkflowCache:
             cache_path = self._get_cache_path(stage)
             if cache_path.exists():
                 try:
-                    with open(cache_path) as f:
+                    with open(cache_path, encoding="utf-8") as f:
                         data = json.load(f)
                     status[stage] = {
                         "cached": True,
@@ -483,7 +483,7 @@ class WorkflowCache:
         
         try:
             with FileLock(lock_path, timeout=30):
-                with open(version_path, "w") as f:
+                with open(version_path, "w", encoding="utf-8") as f:
                     json.dump(entry.to_dict(), f, indent=2, default=str)
             
             logger.info(f"Saved version {version} for {stage_name}")
@@ -508,7 +508,7 @@ class WorkflowCache:
         version_path = self._get_version_path(stage_name, version)
         
         try:
-            with open(version_path) as f:
+            with open(version_path, encoding="utf-8") as f:
                 data = json.load(f)
             
             entry = CacheEntry.from_dict(data)
@@ -533,7 +533,7 @@ class WorkflowCache:
             version_path = self._get_version_path(stage_name, version)
             if version_path.exists():
                 try:
-                    with open(version_path) as f:
+                    with open(version_path, encoding="utf-8") as f:
                         data = json.load(f)
                     
                     versions.append(VersionInfo(

@@ -26,7 +26,14 @@ All new agents MUST:
 
 ## Agent Registry
 - Always add new agents to `src/agents/registry.py` (`AGENT_REGISTRY`)
-- The registry currently includes `A01` through `A20` (with `A16` for the local evidence pipeline; `A17`-`A20` for writing and review)
+- The registry currently includes `A01` through `A25`:
+  - `A01`-`A04`: Intake and initial analysis
+  - `A05`-`A09`: Literature and planning
+  - `A10`-`A11`: Gap resolution
+  - `A12`-`A15`: Quality and tracking
+  - `A16`: Evidence extraction
+  - `A17`-`A23`: Section writers
+  - `A24`-`A25`: Data analysis execution and feasibility validation
 
 ## Agent Model Configuration
 | Task Type | Model | Use Case |

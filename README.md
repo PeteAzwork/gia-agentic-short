@@ -129,12 +129,47 @@ The canonical list lives in [src/agents/registry.py](src/agents/registry.py). Cu
 
 ```
 gia-agentic-short/
-├── src/            # Agents, gates, evidence pipeline, schemas, utilities
-├── scripts/        # Local runners for workflows and gates
-├── docs/           # Roadmap, checklists, writing style guide
-├── tests/          # pytest suite
-└── evaluation/     # Evaluation inputs and runners
+├── src/                 # Core source code
+│   ├── agents/          # Agent implementations (A01-A25)
+│   ├── analysis/        # Analysis runner and gates
+│   ├── citations/       # Bibliography and citation management
+│   ├── claims/          # Claim verification and gates
+│   ├── evaluation/      # Evaluation suite runner
+│   ├── evidence/        # Evidence extraction and storage
+│   ├── literature/      # Literature search and gates
+│   ├── llm/             # Claude API client
+│   ├── schemas/         # JSON schema definitions
+│   └── utils/           # Shared utilities
+├── scripts/             # CLI runners for workflows and gates
+├── docs/                # Roadmap, checklists, writing style guide
+├── tests/               # pytest suite (400+ unit tests)
+└── evaluation/          # Evaluation inputs and test queries
 ```
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `run_workflow.py` | Run Phase 1 research workflow |
+| `run_literature_workflow.py` | Run Phase 2 literature workflow |
+| `run_gap_resolution.py` | Run Phase 1.5 gap resolution |
+| `run_analysis_gate.py` | Validate analysis prerequisites |
+| `run_citation_gate.py` | Lint citation references |
+| `run_literature_gate.py` | Validate literature requirements |
+| `run_claim_evidence_gate.py` | Verify claim-evidence links |
+| `run_citation_accuracy_gate.py` | Check citation alignment |
+| `run_evaluation_suite.py` | Run evaluation test suite |
+| `research_intake_server.py` | Local project intake server |
+
+## Configuration
+
+Environment variables (optional):
+- `ANTHROPIC_API_KEY`: Required for LLM calls
+- `EDISON_API_KEY`: Optional for literature search
+- `GIA_INTAKE_PORT`: Intake server port (default: 8080)
+- `GIA_MAX_UPLOAD_MB`: Max upload size (default: 2048)
+- `GIA_MAX_ZIP_FILES`: Max files in zip (default: 20000)
+- `ENABLE_TRACING`: Enable OpenTelemetry tracing
 
 ## Contributing
 
@@ -144,7 +179,7 @@ This repo is moving quickly and the agent contracts are evolving; coordination u
 
 ## Development
 
-Prereqs: Python 3.11+
+Prerequisites: Python 3.11+
 
 ```bash
 python -m venv .venv
@@ -153,7 +188,20 @@ pip install -r requirements.txt
 
 # Unit tests (no external API keys required)
 .venv/bin/python -m pytest tests/ -v -m unit
+
+# Integration tests (requires API keys)
+.venv/bin/python -m pytest tests/ -v -m integration
+
+# All tests
+.venv/bin/python -m pytest tests/ -v
 ```
+
+## Security
+
+- API keys are loaded from environment variables only
+- Subprocess execution uses minimal environment isolation
+- File operations validate paths and enforce size limits
+- See [SECURITY.md](SECURITY.md) for security policy
 
 ## License
 

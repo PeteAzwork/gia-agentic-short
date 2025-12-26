@@ -32,7 +32,7 @@ class TestEvaluationQueries:
     @pytest.mark.unit
     def test_test_queries_valid_json(self, test_queries_path):
         """Test queries should be valid JSON."""
-        with open(test_queries_path) as f:
+        with open(test_queries_path, encoding="utf-8") as f:
             queries = json.load(f)
         
         assert isinstance(queries, list)
@@ -41,7 +41,7 @@ class TestEvaluationQueries:
     @pytest.mark.unit
     def test_test_queries_have_required_fields(self, test_queries_path):
         """Each query should have required fields."""
-        with open(test_queries_path) as f:
+        with open(test_queries_path, encoding="utf-8") as f:
             queries = json.load(f)
         
         required_fields = ["id", "title", "research_question", "target_journal"]
@@ -53,7 +53,7 @@ class TestEvaluationQueries:
     @pytest.mark.unit
     def test_test_queries_have_unique_ids(self, test_queries_path):
         """All query IDs should be unique."""
-        with open(test_queries_path) as f:
+        with open(test_queries_path, encoding="utf-8") as f:
             queries = json.load(f)
         
         ids = [q["id"] for q in queries]
@@ -62,7 +62,7 @@ class TestEvaluationQueries:
     @pytest.mark.unit
     def test_test_queries_valid_journals(self, test_queries_path):
         """Target journals should be valid options."""
-        with open(test_queries_path) as f:
+        with open(test_queries_path, encoding="utf-8") as f:
             queries = json.load(f)
         
         valid_journals = ["RFS", "JFE", "JF", "JFQA"]
@@ -74,7 +74,7 @@ class TestEvaluationQueries:
     @pytest.mark.unit
     def test_test_queries_research_types(self, test_queries_path):
         """Research types should be valid."""
-        with open(test_queries_path) as f:
+        with open(test_queries_path, encoding="utf-8") as f:
             queries = json.load(f)
         
         valid_types = ["Empirical", "Theoretical", "Review/Survey", "Methodology"]
@@ -87,7 +87,7 @@ class TestEvaluationQueries:
     @pytest.mark.unit
     def test_test_queries_hypothesis_consistency(self, test_queries_path):
         """Queries with has_hypothesis=True should have hypothesis text."""
-        with open(test_queries_path) as f:
+        with open(test_queries_path, encoding="utf-8") as f:
             queries = json.load(f)
         
         for query in queries:
@@ -157,7 +157,7 @@ class TestQueryDataVariety:
     def queries(self):
         """Load test queries."""
         path = Path(__file__).parent.parent / "evaluation" / "test_queries.json"
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
     
     @pytest.mark.unit
