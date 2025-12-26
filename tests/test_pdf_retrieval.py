@@ -6,12 +6,11 @@ for more information see: https://giatenica.com
 """
 
 import json
-from pathlib import Path
 
 import httpx
 import pytest
 
-from src.evidence.pdf_retrieval import PdfRetrievalTool
+from src.evidence.pdf_retrieval import PdfRetrievalTool, _safe_filename, parse_arxiv_id
 
 
 def _mock_transport(handler):
@@ -117,3 +116,32 @@ def test_pdf_retrieval_uses_semantic_scholar_fallback_when_arxiv_fails(temp_proj
     assert meta["retrieved_from"] == s2_pdf
     assert "semantic_scholar" in meta
     assert meta["semantic_scholar"]["license"] == "cc-by"
+
+
+@pytest.mark.unit
+def test_parse_arxiv_id_accepts_prefix_url_and_pdf_suffix():
+    assert parse_arxiv_id("arXiv:1234.56789") == "1234.56789"
+    assert parse_arxiv_id("https://arxiv.org/abs/1234.56789") == "1234.56789"
+    assert parse_arxiv_id("https://arxiv.org/pdf/1234.56789.pdf") == "1234.56789"
+    assert parse_arxiv_id("hep-th/9901001") == "hep-th/9901001"
+
+
+@pytest.mark.unit
+def test_parse_arxiv_id_rejects_invalid_inputs():
+    with pytest.raises(ValueError, match="non-empty"):
+        parse_arxiv_id("")
+    with pytest.raises(ValueError, match="Only arxiv.org URLs"):
+        parse_arxiv_id("https://example.com/abs/1234.56789")
+    with pytest.raises(ValueError, match="Invalid arXiv id"):
+        parse_arxiv_id("12 34.56789")
+    with pytest.raises(ValueError, match="Invalid arXiv id"):
+        parse_arxiv_id("../1234.56789")
+
+
+@pytest.mark.unit
+def test_safe_filename_sanitizes_and_falls_back():
+    assert _safe_filename("") == "document"
+    assert _safe_filename("////") == "document"
+    assert "/" not in _safe_filename("a/b")
+    assert "\\" not in _safe_filename("a\\b")
+    assert _safe_filename("weird☺name")

@@ -148,11 +148,11 @@ class PdfRetrievalTool:
                 declared_len = resp.headers.get("content-length")
                 if declared_len is not None:
                     try:
-                        if int(declared_len) > self.max_pdf_bytes:
-                            raise ValueError("PDF exceeds max size")
-                    except ValueError:
-                        # Ignore invalid Content-Length and enforce during streaming.
-                        pass
+                        declared_bytes = int(declared_len)
+                    except (TypeError, ValueError):
+                        declared_bytes = None
+                    if declared_bytes is not None and declared_bytes > self.max_pdf_bytes:
+                        raise ValueError("PDF exceeds max size")
 
                 with open(tmp_path, "wb") as f:
                     for chunk in resp.iter_bytes(chunk_size=1024 * 256):
@@ -171,6 +171,7 @@ class PdfRetrievalTool:
                 if tmp_path.exists():
                     tmp_path.unlink()
             except OSError:
+                # Best-effort cleanup; failure to remove the temporary file is non-fatal.
                 pass
             raise
         finally:
@@ -194,6 +195,13 @@ class PdfRetrievalTool:
             resp = client.get(url, params=params)
             resp.raise_for_status()
             payload = resp.json()
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if status == 404:
+                return None
+            raise
+        except httpx.RequestError:
+            return None
         finally:
             if close_client:
                 client.close()
@@ -223,6 +231,22 @@ class PdfRetrievalTool:
         source_id: Optional[str] = None,
         use_semantic_scholar_fallback: bool = True,
     ) -> RetrievedPdf:
+        """Retrieve an arXiv PDF into `sources/<source_id>/raw/`.
+
+        Writes two files:
+        - The downloaded PDF under `sources/<source_id>/raw/<filename>.pdf`
+        - A metadata JSON file under `sources/<source_id>/raw/retrieval.json`
+
+        When `use_semantic_scholar_fallback=True`, a failed arXiv download will
+        trigger an OA PDF lookup via Semantic Scholar. If the fallback succeeds,
+        metadata will include the original arXiv error context.
+
+        Raises:
+            ValueError: Invalid arXiv id/URL, invalid computed source_id, non-HTTPS URL,
+                or PDF size exceeding the configured maximum.
+            httpx.HTTPError: Network/HTTP failures from httpx when downloading.
+            RuntimeError: When both arXiv download and fallback fail.
+        """
         arxiv_id = parse_arxiv_id(arxiv_id_or_url)
 
         safe_id_for_source = arxiv_id.replace("/", "_")
@@ -239,22 +263,34 @@ class PdfRetrievalTool:
         primary_url = arxiv_pdf_url(arxiv_id)
         retrieval_url = primary_url
         semantic_info: Optional[Dict[str, Any]] = None
+        arxiv_error: Optional[Dict[str, str]] = None
 
         try:
             sha256, size_bytes, content_type = self._download_to_path(primary_url, pdf_path)
             retrieval_used = "arxiv"
-        except Exception:
+        except Exception as arxiv_exc:
             if not use_semantic_scholar_fallback:
                 raise
-            semantic_info = self._semantic_scholar_open_access_pdf_url(arxiv_id)
-            if not semantic_info:
-                raise
-            fallback_url = semantic_info.get("open_access_pdf", {}).get("url")
-            if not isinstance(fallback_url, str) or not fallback_url:
-                raise
-            retrieval_url = fallback_url
-            sha256, size_bytes, content_type = self._download_to_path(fallback_url, pdf_path)
-            retrieval_used = "semantic_scholar"
+
+            arxiv_error = {
+                "type": type(arxiv_exc).__name__,
+                "message": str(arxiv_exc),
+            }
+
+            try:
+                semantic_info = self._semantic_scholar_open_access_pdf_url(arxiv_id)
+                if not semantic_info:
+                    raise RuntimeError("Semantic Scholar fallback did not return OA PDF metadata")
+
+                fallback_url = semantic_info.get("open_access_pdf", {}).get("url")
+                if not isinstance(fallback_url, str) or not fallback_url:
+                    raise RuntimeError("Semantic Scholar fallback metadata missing OA PDF URL")
+
+                retrieval_url = fallback_url
+                sha256, size_bytes, content_type = self._download_to_path(fallback_url, pdf_path)
+                retrieval_used = "semantic_scholar"
+            except Exception as fallback_exc:
+                raise RuntimeError(f"Semantic Scholar fallback failed: {fallback_exc}") from arxiv_exc
 
         record: Dict[str, Any] = {
             "source_id": sid,
@@ -271,6 +307,8 @@ class PdfRetrievalTool:
         }
         if semantic_info is not None:
             record["semantic_scholar"] = semantic_info
+        if arxiv_error is not None:
+            record["arxiv_error"] = arxiv_error
 
         metadata_path.write_text(
             json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
