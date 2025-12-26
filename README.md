@@ -2,8 +2,13 @@
 
 [![Python CI](https://github.com/giatenica/gia-agentic-short/actions/workflows/ci.yml/badge.svg)](https://github.com/giatenica/gia-agentic-short/actions/workflows/ci.yml)
 [![Security](https://github.com/giatenica/gia-agentic-short/actions/workflows/security.yml/badge.svg)](https://github.com/giatenica/gia-agentic-short/actions/workflows/security.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Python: 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
 
-Autonomous academic research system (current module: quantitative finance).
+Fully autonomous academic research pipeline in development.
+
+This repository is building an end-to-end, agent-driven system that goes from project intake to an auditable research output: literature review, structured evidence extraction, optional computation, and paper drafting. The north star is “no claim without traceable support”.
 
 ## Author
 
@@ -11,556 +16,118 @@ Autonomous academic research system (current module: quantitative finance).
 
 *Gia Tenica is an anagram for Agentic AI. Gia is a fully autonomous AI researcher. For more information see: https://giatenica.com*
 
-## Overview
-
-This project implements an agentic research pipeline using the Claude 4.5 model family. The system automates academic research workflows from project intake through literature review and paper structuring, with support for:
-
-- Multi-agent workflows with specialized agents per task
-- Automated data analysis and gap resolution
-- Edison Scientific API integration for literature search
-- Research overview generation and synthesis
-- Optional local evidence pipeline (offline source ingest, parsing, and schema-valid evidence extraction)
-- LaTeX paper structure generation
-- Prompt caching and batch processing support
-- OpenTelemetry tracing for debugging
+## What this repo is
 
-### Safety and Reliability Notes
+- A multi-agent research pipeline with a clear artifact trail on disk
+- A set of gates (evidence, citations, analysis) that block or downgrade when inputs are incomplete
+- A schema-first approach: JSON schemas are treated as contracts
+- A work in progress. Expect changes.
 
-- Workflows validate the project folder and handle missing or invalid `project.json` without crashing.
-- Edison is treated as an optional external dependency; when it is unavailable, the workflow records a failure for that stage and downstream synthesis produces a scaffold output.
-- LLM-generated code execution (gap resolution) runs in a subprocess with a minimal environment and isolated Python mode (`-I`). It is designed to reduce accidental secret leakage; it is not a full sandbox.
-- Subprocess stdout and stderr decoding is forced to UTF-8 with replacement to avoid crashes when tools emit invalid bytes.
-- Several filesystem enumerations apply a max-file cap (default sourced from `GIA_MAX_ZIP_FILES`) to avoid pathological directory walks.
+This is not a hosted product. It is a research codebase and a prototype pipeline.
 
-## Architecture
+## Architecture at a glance
 
-### Model Selection
+The pipeline is organized around phases and durable outputs:
 
-| Task Type | Model | Use Case |
-|-----------|-------|----------|
-| Complex Reasoning | Claude Opus 4.5 | Research synthesis, hypothesis development, project planning |
-| Coding/Agents | Claude Sonnet 4.5 | Code generation, literature synthesis, paper structure |
-| High-Volume | Claude Haiku 4.5 | Classification, summarization, data extraction |
-
-### Agent Framework
-
-All agents inherit from `BaseAgent` which provides:
-- **Current date awareness**: Models know today's date for temporal reasoning
-- **Web search awareness**: Models flag when they need current information
-- **Optimal model selection**: Task-based automatic model routing
-- **Prompt caching**: Uses Anthropic prompt caching controls when enabled
-- **Critical rules**: No hallucination, no banned words
+- **Intake**: a project folder with `project.json` plus optional data, sources, and notes
+- **Workflows**: orchestrated phases that call specialized agents and write Markdown and JSON artifacts
+- **Evidence layer (optional)**: offline source ingest and parsing, then schema-valid `EvidenceItem` extraction with locators
+- **Citations (optional)**: canonical `CitationRecord` registry plus gates and linting
+- **Computation (optional)**: analysis scripts produce `MetricRecord` outputs; gates ensure numbers are backed by metrics
+- **Writing (optional)**: section writers and referee-style review constrained by registries
 
-### Phase 1 Agents (Initial Analysis)
-
-| Agent | ID | Task Type | Model | Purpose |
-|-------|-----|-----------|-------|---------|
-| DataAnalyst | A01 | Data Extraction | Haiku | Analyze datasets and generate statistics |
-| ResearchExplorer | A02 | Data Analysis | Sonnet | Analyze what the user has provided |
-| GapAnalyst | A03 | Complex Reasoning | Opus | Identify missing elements for research |
-| OverviewGenerator | A04 | Document Creation | Sonnet | Generate research overview documents |
+For roadmap and contracts, see [docs/next_steps.md](docs/next_steps.md).
 
-### Phase 2 Agents (Literature and Planning)
+### Safety and auditability
 
-| Agent | ID | Task Type | Model | Purpose |
-|-------|-----|-----------|-------|---------|
-| HypothesisDeveloper | A05 | Complex Reasoning | Opus | Formulate testable hypotheses |
-| LiteratureSearcher | A06 | Data Analysis | Sonnet | Search literature via Edison API |
-| LiteratureSynthesizer | A07 | Document Creation | Sonnet | Synthesize literature and create .bib |
-| PaperStructurer | A08 | Document Creation | Sonnet | Create LaTeX paper structure |
-| ProjectPlanner | A09 | Complex Reasoning | Opus | Create detailed project plan |
+- Project folder inputs are validated. Missing or invalid `project.json` should not crash the workflow.
+- External dependencies are optional; when they fail, later stages are expected to produce a scaffold output.
+- LLM-generated code execution runs in a subprocess with isolated Python mode (`-I`) and a minimal environment allowlist. This reduces accidental secret leakage; it is not a full sandbox.
 
-### Gap Resolution Agents
+## Agents
 
-| Agent | ID | Task Type | Model | Purpose |
-|-------|-----|-----------|-------|---------|
-| GapResolver | A10 | Coding | Sonnet | Generate code to resolve data gaps |
-| OverviewUpdater | A11 | Complex Reasoning | Opus | Synthesize findings into updated overview |
+The canonical list lives in [src/agents/registry.py](src/agents/registry.py). Current registry IDs:
 
-### Quality Assurance Agents
+### Phase 1: Intake and initial analysis
 
-| Agent | ID | Task Type | Model | Purpose |
-|-------|-----|-----------|-------|---------|
-| CriticalReviewer | A12 | Complex Reasoning | Opus | Review outputs for quality with extended thinking |
-| StyleEnforcer | A13 | Data Extraction | Haiku | Check banned words and style compliance |
-| ConsistencyChecker | A14 | Data Analysis | Sonnet | Verify cross-document consistency |
-| ReadinessAssessor | A15 | Data Extraction | Haiku | Assess project readiness and track time |
+| ID | Agent | Purpose |
+|---:|------|---------|
+| A01 | DataAnalyst | Analyze project data files and summarize quality and structure |
+| A02 | ResearchExplorer | Extract research question, hypotheses, and constraints from the submission |
+| A03 | GapAnalyst | Identify missing elements and produce a prioritized gap list |
+| A04 | OverviewGenerator | Write `RESEARCH_OVERVIEW.md` |
 
-### Evidence Pipeline Agent
+### Phase 2: Literature and planning
 
-| Agent | ID | Task Type | Model | Purpose |
-|-------|-----|-----------|-------|---------|
-| EvidenceExtractor | A16 | Data Extraction | Haiku | Extract schema-valid evidence items from parsed sources |
+| ID | Agent | Purpose |
+|---:|------|---------|
+| A05 | HypothesisDeveloper | Turn an overview into testable hypotheses and literature questions |
+| A06 | LiteratureSearcher | Search literature (Edison integration when configured) |
+| A07 | LiteratureSynthesizer | Produce a literature synthesis and bibliography artifacts |
+| A08 | PaperStructurer | Generate LaTeX paper structure |
+| A09 | ProjectPlanner | Draft a project plan with milestones and checks |
 
-### Writing and Review Agents (Optional)
+### Phase 3: Gap resolution
 
-These agents are designed to be deterministic and filesystem-first when possible.
+| ID | Agent | Purpose |
+|---:|------|---------|
+| A10 | GapResolver | Propose code changes or scripts to resolve data or pipeline gaps |
+| A11 | OverviewUpdater | Update the overview after gap resolution |
 
-| Agent | ID | Task Type | Model | Purpose |
-|-------|-----|-----------|-------|---------|
-| SectionWriter | A17 | Document Creation | Sonnet | Minimal section writer interface (stub) writing LaTeX under outputs/sections/ |
-| RelatedWorkWriter | A18 | Document Creation | Sonnet | Deterministic Related Work writer constrained by evidence and canonical citations |
-| RefereeReview | A19 | Data Extraction | Haiku | Deterministic referee-style checks over generated LaTeX sections |
-| ResultsWriter | A20 | Document Creation | Sonnet | Deterministic Results writer; only emits numbers backed by outputs/metrics.json |
+### Quality and tracking
 
-### Agent Registry Summary
+| ID | Agent | Purpose |
+|---:|------|---------|
+| A12 | CriticalReviewer | Review outputs and surface issues and contradictions |
+| A13 | StyleEnforcer | Enforce writing style rules (including banned words list) |
+| A14 | ConsistencyChecker | Run cross-document consistency checks |
+| A15 | ReadinessAssessor | Assess readiness and track timing |
 
-- Phase 1 (Initial Analysis): A01–A04
-- Phase 2 (Literature and Planning): A05–A09
-- Phase 3 (Gap Resolution): A10–A11
-- Quality Assurance: A12–A14
-- Project Tracking: A15
-- Evidence Pipeline: A16
-- Writing and Review (optional): A17–A20
+### Evidence and writing (optional)
 
-## Setup
+| ID | Agent | Purpose |
+|---:|------|---------|
+| A16 | EvidenceExtractor | Extract schema-valid evidence items from parsed sources |
+| A17 | SectionWriter | Minimal section writer interface (writes LaTeX sections) |
+| A18 | RelatedWorkWriter | Write “Related Work” constrained by evidence and citations |
+| A19 | RefereeReview | Run deterministic referee-style checks over sections |
+| A20 | ResultsWriter | Write results constrained by metrics (`outputs/metrics.json`) |
+| A21 | IntroductionWriter | Draft an introduction section from registries |
+| A22 | MethodsWriter | Draft a methods section from registries |
+| A23 | DiscussionWriter | Draft a discussion section from registries |
+| A24 | DataAnalysisExecution | Execute project analysis scripts and capture provenance |
+| A25 | DataFeasibilityValidation | Check whether the planned analysis is feasible given available data |
 
-### Prerequisites
-
-- Python 3.11+
-- Virtual environment
-
-### Installation
-
-```bash
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### Core Dependencies
-
-| Package | Purpose |
-|---------|---------|
-| anthropic | Claude API client |
-| edison-client | Edison Scientific literature search |
-| httpx | Async HTTP with timeout configuration |
-| tenacity | Retry logic with exponential backoff |
-| filelock | Thread-safe file operations |
-| opentelemetry-* | Distributed tracing |
-| loguru | Structured logging |
-| pandas | Data analysis utilities |
-| pyarrow | Parquet support for pandas |
-
-### Environment Configuration
-
-Create a `.env` file:
-
-```env
-# Required
-ANTHROPIC_API_KEY=your_anthropic_key
-
-# Optional - Edison Scientific (for literature search)
-EDISON_API_KEY=your_edison_key
-
-# Optional - Financial Data APIs
-NASDAQ_DATA_LINK_API_KEY=your_key
-ALPHAVANTAGE_API_KEY=your_key
-FRED_API_KEY=your_key
-
-# Optional - Tracing
-ENABLE_TRACING=false
-OTLP_ENDPOINT=http://localhost:4318/v1/traces
-```
-
-Note: If `EDISON_API_KEY` is not set, the literature workflow will skip Edison calls. The literature synthesis stage will produce a scaffold output so the workflow can still complete.
-
-Note: Library imports do not automatically read `.env`. The CLI scripts in `scripts/` call `load_env_file_lenient()` on startup. If you create a `ClaudeClient` directly, either export the needed environment variables, call `load_env_file_lenient()` yourself, or set `GIA_LOAD_ENV_FILE=1`.
-
-## Usage
-
-### Run Research Workflow
-
-```bash
-# Phase 1: Initial analysis workflow
-.venv/bin/python scripts/run_workflow.py user-input/your-project
-
-# Phase 1.5: Gap resolution workflow
-.venv/bin/python scripts/run_gap_resolution.py user-input/your-project
-
-# Phase 2: Literature and planning workflow (requires Phase 1)
-.venv/bin/python scripts/run_literature_workflow.py user-input/your-project
-```
-
-### Evidence Outputs (Optional)
-
-There are two ways to generate local evidence artifacts:
-
-1) Offline from cached stage files (no model calls):
-
-```bash
-.venv/bin/python scripts/run_evidence_from_cache.py user-input/your-project --all-stages --append-ledger
-```
-
-This reads `.workflow_cache/*.json`, writes per-stage evidence under `sources/`, optionally appends to `.evidence/evidence.jsonl`, then runs the evidence gate.
-
-2) As a hook during orchestrator execution (off by default):
-
-The orchestrator can write `sources/cache_<stage>/parsed.json` and `sources/cache_<stage>/evidence.json` after each stage result and run `check_evidence_gate(...)`.
-Enable it by passing `OrchestratorConfig(enable_evidence_hook=True, ...)` when constructing `AgentOrchestrator`.
-
-Notes:
-- The hook is best-effort: failures are logged and do not fail the workflow.
-- Ledger append is disabled by default; set `evidence_hook_append_ledger=True` if you want `.evidence/evidence.jsonl` populated.
-
-### Citation Gate (Optional)
-
-The citation gate can lint Markdown/LaTeX citations in a project folder against `bibliography/citations.json`.
-
-Run it locally:
-
-```bash
-.venv/bin/python scripts/run_citation_gate.py user-input/your-project --enabled
-```
-
-Behavior:
-- Missing cited keys default to `block`
-- Unverified citations default to `downgrade`
-
-### Citation Accuracy Gate (Optional)
-
-The citation accuracy gate performs a deterministic, heuristic alignment check between a claim statement and its cited evidence excerpts.
-
-Run it locally:
-
-```bash
-.venv/bin/python scripts/run_citation_accuracy_gate.py user-input/your-project --enabled
-```
-
-Notes:
-- The gate is off by default; enable it explicitly in workflow context.
-- This is a heuristic verifier; it is intended as a safety check to catch obvious mismatches.
-
-### Analysis Runner (Optional)
-
-The analysis runner executes a Python script under `analysis/` and writes a deterministic provenance record to `outputs/artifacts.json`.
-
-Notes:
-- Execution uses isolated Python mode (`-I`) and a minimal environment allowlist to reduce accidental secret leakage.
-- The artifacts file includes the script path, SHA-256, subprocess return code, and a list of created files.
-
-See: `src/analysis/runner.py` (`run_project_analysis_script`).
-
-### Computation Gate (Optional)
-
-The computation gate validates that computed claims only reference metrics that exist in `outputs/metrics.json`.
-
-- Claims live at `claims/claims.json` as `ClaimRecord` objects.
-- Metrics live at `outputs/metrics.json` as `MetricRecord` objects.
-
-The gate is off by default and supports `block` or `downgrade` behavior when referenced metric keys are missing.
-
-See: `src/claims/gates.py` (`check_computation_gate`, `enforce_computation_gate`).
-
-### Start Intake Server
-
-```bash
-# Start web server for project submission
-.venv/bin/python scripts/research_intake_server.py
-# Open http://localhost:8080 (or set GIA_INTAKE_PORT)
-```
-
-### Project Structure
-
-```
-user-input/your-project/
-├── project.json                # Project specification
-├── analysis/                    # Optional analysis scripts (user-authored)
-├── data/
-│   └── raw data/              # Data files (parquet, csv)
-├── claims/
-│   └── claims.json             # Optional ClaimRecord list
-├── outputs/
-│   ├── artifacts.json          # Analysis provenance (when runner is used)
-│   ├── metrics.json            # Optional MetricRecord list
-│   ├── tables/
-│   └── figures/
-│   └── sections/               # Optional LaTeX section outputs (Sprint 4 writers)
-├── RESEARCH_OVERVIEW.md        # Generated overview (Phase 1)
-├── UPDATED_RESEARCH_OVERVIEW.md # After gap resolution
-├── LITERATURE_REVIEW.md        # Literature synthesis (Phase 2)
-├── references.bib              # BibTeX bibliography
-├── bibliography/               # Canonical bibliography artifacts
-│   ├── citations.json
-│   └── references.bib
-├── paper/
-│   └── main.tex               # LaTeX paper structure
-├── PROJECT_PLAN.md            # Detailed project plan
-└── .workflow_cache/            # Stage caching
-
-# Optional evidence artifacts (when the local evidence pipeline is enabled)
-sources/                         # Per-source raw + parsed + extracted evidence
-.evidence/evidence.jsonl         # Append-only evidence ledger (JSONL)
-```
-
-## Claude Client Features
-
-### Prompt Caching
-
-System prompts can be sent with cache control enabled. Current implementation supports `cache_ttl="ephemeral"`.
-
-```python
-from src.llm import get_claude_client
-
-client = get_claude_client()
-response = client.chat(
-    messages=[{"role": "user", "content": "Analyze..."}],
-    system="You are an expert...",  # Cached
-    cache_ttl="ephemeral"          # 5-min cache
-)
-```
-
-### Batch Processing
-
-For non-urgent bulk tasks:
-
-```python
-from src.llm import ClaudeClient, BatchRequest
-
-client = ClaudeClient()
-requests = [
-    BatchRequest(custom_id=f"req_{i}", messages=[...])
-    for i in range(100)
-]
-batch_id = client.create_batch(requests)
-```
-
-### Extended Thinking
-
-For complex reasoning:
-
-```python
-thinking, response = client.chat_with_thinking(
-    messages=[{"role": "user", "content": "Complex question..."}],
-    budget_tokens=16000,  # Generous thinking budget
-    max_tokens=48000
-)
-```
-
-## Project Structure
+## Repository layout
 
 ```
 gia-agentic-short/
-├── src/
-│   ├── config.py                # Centralized configuration
-│   ├── tracing.py               # OpenTelemetry setup
-│   ├── agents/                  # 20 specialized agents (A01-A20)
-│   │   ├── base.py              # BaseAgent with best practices
-│   │   ├── best_practices.py    # Standards for all agents
-│   │   ├── registry.py          # Agent registry and capabilities
-│   │   ├── cache.py             # Workflow stage caching
-│   │   ├── feedback.py          # Feedback and revision system
-│   │   ├── orchestrator.py      # Advanced workflow orchestration
-│   │   ├── workflow.py          # Phase 1 research workflow
-│   │   ├── gap_resolution_workflow.py  # Gap resolution workflow
-│   │   ├── literature_workflow.py  # Phase 2 literature workflow
-│   │   ├── data_analyst.py      # A01: Data extraction
-│   │   ├── research_explorer.py # A02: Project analysis
-│   │   ├── gap_analyst.py       # A03: Gap identification
-│   │   ├── overview_generator.py # A04: Overview generation
-│   │   ├── hypothesis_developer.py # A05: Hypothesis development
-│   │   ├── literature_search.py # A06: Literature search
-│   │   ├── literature_synthesis.py # A07: Literature synthesis
-│   │   ├── paper_structure.py   # A08: Paper structuring
-│   │   ├── project_planner.py   # A09: Project planning
-│   │   ├── gap_resolver.py      # A10: Gap resolution
-│   │   ├── critical_review.py   # A12: Quality review
-│   │   ├── style_enforcer.py    # A13: Style enforcement
-│   │   ├── consistency_checker.py # A14: Consistency checking
-│   │   ├── readiness_assessor.py # A15: Readiness assessment
-│   │   ├── evidence_extractor.py # A16: Evidence extraction
-│   │   ├── section_writer.py     # A17: Section writer interface + stub
-│   │   ├── related_work_writer.py # A18: Related Work writer
-│   │   ├── referee_review.py     # A19: Deterministic referee review
-│   │   ├── results_writer.py     # A20: Deterministic Results writer
-│   │   └── writing_review_integration.py # Sprint 4 wiring for writing + review stage
-│   ├── evidence/                # Evidence pipeline
-│   │   ├── extraction.py        # Evidence extraction
-│   │   ├── parser.py            # Document parsing
-│   │   ├── pipeline.py          # Evidence pipeline
-│   │   ├── store.py             # Evidence storage
-│   │   └── gates.py             # Evidence gates
-│   ├── llm/
-│   │   ├── claude_client.py     # Claude API with caching & batching
-│   │   └── edison_client.py     # Edison Scientific API client
-│   ├── schemas/                 # JSON schemas for validation
-│   └── utils/
-│       ├── validation.py        # Path and input validation
-│       ├── schema_validation.py # JSON schema validation
-│       ├── time_tracking.py     # Execution time tracking
-│       ├── readiness_scoring.py # Project readiness scoring
-│       ├── consistency_validation.py # Cross-document consistency
-│       ├── style_validation.py  # Style guide enforcement
-│       ├── filesystem.py        # Filesystem helpers
-│       └── project_io.py        # Project I/O utilities
-├── tests/                       # pytest test suite
-├── evaluation/                  # Test queries and metrics
-├── user-input/                  # Research projects
-├── scripts/
-│   ├── run_workflow.py          # Phase 1 workflow runner
-│   ├── run_gap_resolution.py    # Gap resolution runner
-│   ├── run_literature_workflow.py # Phase 2 workflow runner
-│   └── research_intake_server.py # Web intake form server
-└── docs/                        # Additional documentation
-```
-
-## Building New Agents
-
-Use the best practices module:
-
-```python
-from src.agents.base import BaseAgent, AgentResult
-from src.agents.best_practices import get_agent_config
-from src.llm.claude_client import TaskType
-
-class MyAgent(BaseAgent):
-    def __init__(self, client=None):
-        # Get configuration with all best practices
-        config = get_agent_config(
-            agent_name="MyAgent",
-            base_prompt="You are an expert at...",
-            task_type=TaskType.DATA_ANALYSIS,  # Routes to Sonnet
-            add_date=True,      # Include current date
-            add_web_awareness=True,  # Include web search awareness
-        )
-        
-        super().__init__(
-            name=config["name"],
-            task_type=config["task_type"],
-            system_prompt=config["system_prompt"],
-            client=client,
-            cache_ttl="ephemeral",  # 5-min cache
-        )
-    
-    async def execute(self, context: dict) -> AgentResult:
-        # Agent implementation
-        response, tokens = await self._call_claude(prompt)
-        return self._build_result(
-            success=True,
-            content=response,
-            tokens_used=tokens,
-        )
-```
-
-## Testing
-
-```bash
-# Run all unit tests
-.venv/bin/python -m pytest tests/ -v -m unit
-
-# Run specific test file
-.venv/bin/python -m pytest tests/test_agents.py -v
-
-# Run with coverage
-.venv/bin/python -m pytest tests/ -v --cov=src
-```
-
-## Cost Management
-
-| Strategy | When to Use |
-|----------|-------------|
-| Prompt Caching | Repeated system prompts and stable instructions |
-| Batch Processing | Non-urgent bulk tasks (10+ requests) |
-| Model Selection | Use Haiku for simple tasks; use Opus for complex reasoning |
-
-## Reliability and Performance
-
-### API Resilience
-
-- **Retry Logic**: Exponential backoff for transient failures (Claude and Edison)
-- **Timeouts**: Centralized timeout configuration in `src/config.py`
-- **Rate Limiting**: Automatic retry on rate limits with backoff
-- **Thread-Safe**: Token usage tracking is thread-safe for concurrent operations
-
-### Cache System
-
-- **Thread Safety**: File locking via `filelock` prevents corruption
-- **Optimized I/O**: Combined validation and loading in single read
-- **Hash Validation**: SHA256 input hashing detects stale cache entries
-- **24-Hour TTL**: Configurable expiration with stage-aware dependencies
-- **Lock Cleanup**: Orphaned lock files are automatically cleaned up
-
-### Tracing
-
-- **OpenTelemetry**: Full distributed tracing support
-- **Graceful Shutdown**: Tracer provider cleanup via atexit handler
-- **HTTP Instrumentation**: Automatic tracing of API calls
-
-### Security
-
-- **Path Validation**: All file paths validated against project boundaries
-- **Zip Extraction**: Secure extraction with path traversal prevention
-- **Code Execution**: Subprocess isolation with minimal environment
-- **Input Sanitization**: All user inputs validated before processing
-- **API Key Protection**: Keys loaded from environment, never logged
-
-## Troubleshooting
-
-### Common Issues
-
-| Issue | Solution |
-|-------|----------|
-| `ANTHROPIC_API_KEY not set` | Add key to `.env` file or environment |
-| `Rate limit exceeded` | Retry logic handles automatically; wait if persistent |
-| `Cache validation failed` | Delete `.workflow_cache/` folder and re-run |
-| `Edison API timeout` | Check network; API has retry logic with exponential backoff |
-| `Path validation error` | Ensure project folder exists and has correct structure |
-
-### Debug Mode
-
-Enable detailed logging:
-
-```bash
-# Set log level
-export LOG_LEVEL=DEBUG
-
-# Enable tracing
-export ENABLE_TRACING=true
-export OTLP_ENDPOINT=http://localhost:4318/v1/traces
-```
-
-### Reset Workflow State
-
-```bash
-# Clear cached workflow stages
-rm -rf user-input/your-project/.workflow_cache/
-
-# Regenerate all outputs
-.venv/bin/python scripts/run_workflow.py user-input/your-project
+├── src/            # Agents, gates, evidence pipeline, schemas, utilities
+├── scripts/        # Local runners for workflows and gates
+├── docs/           # Roadmap, checklists, writing style guide
+├── tests/          # pytest suite
+└── evaluation/     # Evaluation inputs and runners
 ```
 
 ## Contributing
 
-### Development Setup
+If you want to contribute, please reach out first: me@giatenica.com
+
+This repo is moving quickly and the agent contracts are evolving; coordination up front helps avoid duplicate work.
+
+## Development
+
+Prereqs: Python 3.11+
 
 ```bash
-# Clone and install
-git clone https://github.com/giatenica/gia-agentic-short.git
-cd gia-agentic-short
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+
+# Unit tests (no external API keys required)
+.venv/bin/python -m pytest tests/ -v -m unit
 ```
-
-### Adding New Agents
-
-1. Create agent file in `src/agents/`
-2. Inherit from `BaseAgent`
-3. Register in `src/agents/registry.py`
-4. Add tests in `tests/test_*.py`
-5. Update workflow if needed
-
-### Code Standards
-
-- Type hints on all function signatures
-- Docstrings for public methods
-- No bare `except:` clauses (use specific exceptions)
-- Follow existing naming conventions
-- Run tests before committing: `.venv/bin/python -m pytest tests/ -v -m unit`
 
 ## License
 
-Proprietary. All rights reserved.
+Apache-2.0. See [LICENSE](LICENSE).
