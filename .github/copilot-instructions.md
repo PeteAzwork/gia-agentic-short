@@ -1,4 +1,113 @@
+# GitHub Copilot Instructions for gia-agentic-short
 
+## Project Overview
+
+This is a fully autonomous academic research pipeline that orchestrates multiple AI agents to conduct end-to-end research: from project intake through literature review, evidence extraction, data analysis, and academic paper writing. The system is designed around durable filesystem artifacts, schema-first validation, and traceable provenance.
+
+**Key Characteristics:**
+- Multi-agent orchestration with 25+ specialized agents (A01-A25)
+- Filesystem-first approach with JSON and Markdown artifacts
+- Optional evidence pipeline for source parsing and extraction
+- Computation gates that require metrics backing for all quantitative claims
+- Academic writing constrained by citation and evidence registries
+- Python 3.11+ codebase using async/await patterns
+
+**North Star:** "No claim without traceable support"
+
+## Repository Structure
+
+```
+gia-agentic-short/
+├── src/                 # Source code
+│   ├── agents/          # Agent implementations (A01-A25)
+│   ├── analysis/        # Analysis runner and gates
+│   ├── citations/       # Citation registry and verification
+│   ├── claims/          # Claim generation and evidence gates
+│   ├── evidence/        # Evidence pipeline (parsing, extraction)
+│   ├── llm/             # Claude and Edison API clients
+│   ├── pipeline/        # Unified pipeline runner
+│   ├── schemas/         # JSON schemas for validation
+│   └── utils/           # Validation, filesystem, subprocess utilities
+├── scripts/             # CLI entrypoints (run_*.py)
+├── tests/               # pytest test suite (497+ unit tests)
+├── docs/                # Documentation (style guide, troubleshooting)
+├── user-input/          # Research project folders (gitignored)
+└── .github/             # GitHub configuration and this file
+```
+
+## How to Build, Test, and Run
+
+### Prerequisites
+- Python 3.11 or higher
+- `ANTHROPIC_API_KEY` environment variable (required for integration tests and live runs)
+- Optional: `EDISON_API_KEY` for literature search integration
+
+### Setup
+```bash
+# Clone the repository
+git clone https://github.com/giatenica/gia-agentic-short.git
+cd gia-agentic-short
+
+# Create and activate virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Create .env file (optional, for local development)
+echo "ANTHROPIC_API_KEY=your_key_here" > .env
+```
+
+### Running Tests
+```bash
+# Run unit tests only (no API keys required, fast)
+.venv/bin/python -m pytest tests/ -v -m unit
+
+# Run all tests including integration tests (requires ANTHROPIC_API_KEY)
+.venv/bin/python -m pytest tests/ -v
+
+# Run specific test file
+.venv/bin/python -m pytest tests/test_agents.py -v
+
+# Skip slow tests
+.venv/bin/python -m pytest tests/ -v -m "not slow"
+```
+
+### Running the Pipeline
+```bash
+# Start the intake server (creates project folders)
+python scripts/research_intake_server.py
+# Then open http://localhost:8080 in your browser
+
+# Run Phase 1: Intake and analysis
+python scripts/run_workflow.py user-input/my-project
+
+# Run Phase 2: Literature review
+python scripts/run_literature_workflow.py user-input/my-project
+
+# Run Phase 3: Gap resolution
+python scripts/run_gap_resolution.py user-input/my-project
+
+# Run all phases sequentially
+python scripts/run_full_pipeline.py user-input/my-project
+
+# Run gates to check constraints
+python scripts/run_citation_gate.py user-input/my-project
+python scripts/run_analysis_gate.py user-input/my-project
+```
+
+### Common Commands
+```bash
+# Run evaluation suite
+python scripts/run_evaluation_suite.py
+
+# Compile LaTeX paper
+python scripts/run_paper_compile.py user-input/my-project
+
+# Run evidence extraction
+python scripts/run_evidence_from_cache.py user-input/my-project
+```
 
 ## Architecture
 
