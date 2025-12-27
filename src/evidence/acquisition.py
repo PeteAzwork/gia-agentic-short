@@ -35,7 +35,7 @@ import httpx
 from loguru import logger
 
 from src.config import RETRIEVAL, TIMEOUTS
-from src.evidence.pdf_retrieval import PdfRetrievalTool
+from src.evidence.pdf_retrieval import PdfRetrievalTool, parse_arxiv_id
 from src.evidence.store import EvidenceStore
 from src.utils.filesystem import validate_source_id
 
@@ -123,8 +123,8 @@ def _compute_source_id(spec: Dict[str, Any]) -> str:
         value = spec.get("id") or spec.get("url")
         if not isinstance(value, str) or not value.strip():
             raise ValueError("arxiv source requires 'id' or 'url'")
-        # PdfRetrievalTool already normalizes and builds a stable source id.
-        arxiv_id = value.strip()
+        # Normalize so URLs and plain IDs map to the same stable source_id.
+        arxiv_id = parse_arxiv_id(value.strip())
         safe = arxiv_id.replace("/", "_")
         return f"arxiv:{safe}"
 

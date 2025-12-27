@@ -112,3 +112,30 @@ def test_source_acquisition_html_url_writes_artifacts(temp_project_folder):
     assert (sp.raw_dir / "source.html").exists()
     assert (sp.raw_dir / "source.txt").exists()
     assert (sp.raw_dir / "retrieval.json").exists()
+
+
+@pytest.mark.unit
+def test_source_acquisition_dedups_arxiv_id_and_arxiv_url(temp_project_folder):
+    rel = _write_sources_list(
+        temp_project_folder,
+        [
+            {"kind": "arxiv", "id": "1234.56789"},
+            {"kind": "arxiv", "url": "https://arxiv.org/abs/1234.56789"},
+        ],
+    )
+
+    calls = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["count"] += 1
+        assert str(request.url) == "https://arxiv.org/pdf/1234.56789.pdf"
+        return httpx.Response(200, headers={"content-type": "application/pdf"}, content=b"%PDF-1.4\nabc")
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.Client(transport=transport, follow_redirects=True)
+
+    summary = ingest_sources_list(project_folder=str(temp_project_folder), sources_list_path=rel, client=client)
+
+    assert summary["ok"] is True
+    assert calls["count"] == 1
+    assert summary["created_source_ids"] == ["arxiv:1234.56789"]
