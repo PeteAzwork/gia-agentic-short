@@ -46,6 +46,7 @@ from .inter_agent_protocol import (
     build_response_message,
     validate_agent_message,
 )
+from .deliberation import DeliberationPerspective, build_consensus
 from .task_decomposition import (
     SubtaskRunRecord,
     aggregate_subtask_runs,
@@ -215,6 +216,69 @@ class AgentOrchestrator:
                 f.write(json.dumps(message, sort_keys=True) + "\n")
         except Exception as e:
             logger.debug(f"Failed to write inter-agent artifact: {e}")
+
+    async def execute_deliberation_and_consensus(
+        self,
+        *,
+        task_text: str,
+        context: Dict[str, Any],
+        agent_ids: List[str],
+        artifact_filename: str = "deliberation.json",
+    ) -> Dict[str, Any]:
+        """Run a minimal multi-agent deliberation loop and produce a consensus.
+
+        This executes 2+ agents with a shared context, detects conflicting outputs,
+        and produces a consolidated output plus rationale.
+
+        Escalation behavior:
+        - If fewer than two agents succeed, mark the result as degraded
+        - If successful outputs conflict, mark the result as degraded
+
+        A deterministic artifact is written under outputs/ for reproducibility.
+        """
+
+        if len(agent_ids) < 2:
+            raise ValueError("Deliberation requires at least two agent_ids")
+
+        merged_context = dict(context)
+        merged_context.setdefault("task_text", task_text)
+        merged_context.setdefault("deliberation_task", task_text)
+
+        async def _run_one(agent_id: str) -> DeliberationPerspective:
+            try:
+                result = await self.execute_agent(agent_id, merged_context, use_cache=True)
+                return DeliberationPerspective(
+                    agent_id=agent_id,
+                    success=bool(result.success),
+                    content=result.content or "",
+                    error=result.error,
+                    result=result.to_dict() if result.success else None,
+                )
+            except Exception as e:
+                return DeliberationPerspective(
+                    agent_id=agent_id,
+                    success=False,
+                    content="",
+                    error=str(e),
+                    result=None,
+                )
+
+        perspectives = await asyncio.gather(*[_run_one(aid) for aid in agent_ids])
+        consensus = build_consensus(
+            task_text=task_text,
+            agent_ids=agent_ids,
+            perspectives=list(perspectives),
+        )
+
+        paths = ensure_project_outputs_layout(self.project_folder)
+        artifact_path = paths.outputs_dir / artifact_filename
+        consensus["artifact_path"] = str(artifact_path.relative_to(paths.project_folder))
+        artifact_path.write_text(
+            json.dumps(consensus, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        return consensus
     
     def _get_agent_instance(self, agent_id: str) -> Optional[BaseAgent]:
         """Get or create an agent instance."""
