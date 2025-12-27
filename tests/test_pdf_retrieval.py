@@ -120,7 +120,10 @@ def test_pdf_retrieval_uses_semantic_scholar_fallback_when_arxiv_fails(temp_proj
 
 @pytest.mark.unit
 def test_pdf_retrieval_writes_error_metadata_on_failure(temp_project_folder):
+    calls = {"count": 0}
+
     def handler(request: httpx.Request) -> httpx.Response:
+        calls["count"] += 1
         return httpx.Response(404, content=b"not found")
 
     client = httpx.Client(transport=_mock_transport(handler))
@@ -136,6 +139,10 @@ def test_pdf_retrieval_writes_error_metadata_on_failure(temp_project_folder):
     assert meta["provider"] == "arxiv"
     assert meta["requested"]["arxiv_id"] == "1234.56789"
     assert isinstance(meta.get("error"), dict)
+    assert isinstance(meta.get("attempts"), list)
+    assert len(meta["attempts"]) == 1
+    assert meta["attempts"][0]["ok"] is False
+    assert calls["count"] == 1
 
 
 @pytest.mark.unit

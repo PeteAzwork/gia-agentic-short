@@ -304,7 +304,11 @@ class PdfRetrievalTool:
 
         metadata_path = sp.raw_dir / "retrieval.json"
         cached = _try_read_cached_retrieval(metadata_path)
-        if isinstance(cached, dict) and cached.get("retrieved_from") == url:
+        if (
+            isinstance(cached, dict)
+            and cached.get("ok") is True
+            and cached.get("retrieved_from") == url
+        ):
             raw_pdf_path = cached.get("raw_pdf_path")
             pdf_path: Optional[Path] = None
             if isinstance(raw_pdf_path, str) and raw_pdf_path:
@@ -365,7 +369,7 @@ class PdfRetrievalTool:
             "ok": True,
             "source_id": sid,
             "provider": "pdf_url",
-            "requested": {"url": url},
+            "requested": {"url": url, "filename": name},
             "retrieved_from": url,
             "retrieved_at": _utc_now_iso_z(),
             "sha256": sha256,
@@ -508,8 +512,9 @@ class PdfRetrievalTool:
                     "retrieved_at": _utc_now_iso_z(),
                     "attempts": attempts,
                     "error": _error_dict(arxiv_exc),
-                    "raw_pdf_path": str(pdf_path.relative_to(store.project_folder)),
                 }
+                if pdf_path.exists() and pdf_path.is_file():
+                    record["raw_pdf_path"] = str(pdf_path.relative_to(store.project_folder))
                 _write_retrieval_json(metadata_path, record)
                 raise
 
@@ -557,8 +562,9 @@ class PdfRetrievalTool:
                     },
                     "arxiv_error": arxiv_error,
                     "semantic_scholar": semantic_info,
-                    "raw_pdf_path": str(pdf_path.relative_to(store.project_folder)),
                 }
+                if pdf_path.exists() and pdf_path.is_file():
+                    record["raw_pdf_path"] = str(pdf_path.relative_to(store.project_folder))
                 _write_retrieval_json(metadata_path, record)
                 raise RuntimeError(f"Semantic Scholar fallback failed: {fallback_exc}") from arxiv_exc
 
