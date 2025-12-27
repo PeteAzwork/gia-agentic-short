@@ -144,6 +144,7 @@ This codebase is organized as a filesystem-first research pipeline. Most compone
 Core subsystems:
 
 - **Workflows**: Orchestrators that run phases and persist outputs (see `src/agents/workflow.py` and `src/agents/literature_workflow.py`).
+- **Deliberation (optional)**: `AgentOrchestrator.execute_deliberation_and_consensus(...)` runs 2+ agents and writes an `outputs/deliberation.json` artifact containing perspectives, conflict flags, and a consolidated output.
 - **Agents**: Deterministic wrappers around LLM calls and local tools; each agent returns `AgentResult` with structured metadata.
 - **Gates**: Small checks that decide whether to pass, downgrade, or block when prerequisites are missing.
   - Citations gate: `src/citations/gates.py`
