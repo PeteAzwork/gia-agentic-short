@@ -20,6 +20,7 @@ from src.agents.workflow import ResearchWorkflow
 from src.agents.writing_review_integration import run_writing_review_stage
 
 from src.pipeline.context import WorkflowContext
+from src.pipeline.defaults import default_gate_config
 from src.claims.generator import generate_claims_from_metrics
 
 from src.pipeline.degradation import (
@@ -100,6 +101,8 @@ def _build_writing_context(project_folder: Path, extra: Optional[Dict[str, Any]]
         "writing_review": _default_writing_review_config(project_folder),
         "referee_review": _default_referee_review_config(project_folder),
     }
+    # Apply default gate configs; callers can override via extra.
+    ctx.update(default_gate_config())
     if isinstance(extra, dict) and extra:
         ctx.update(extra)
     return ctx
