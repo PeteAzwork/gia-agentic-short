@@ -1,14 +1,17 @@
-# Troubleshooting Guide
+# Pipeline Troubleshooting Guide
 
-This guide helps diagnose and resolve common issues with the GIA research pipeline.
+This guide helps diagnose and fix common issues in the GIA Agentic Research Pipeline.
 
 ## Table of Contents
 
-1. [Data Flow Verification](#data-flow-verification)
-2. [Common Failure Patterns](#common-failure-patterns)
-3. [Debug Commands](#debug-commands)
-4. [Quality Gates](#quality-gates)
-5. [Evaluation Metrics](#evaluation-metrics)
+1. [Data Flow Verification](#1-data-flow-verification)
+2. [Common Failure Patterns](#2-common-failure-patterns)
+3. [Debug Commands](#3-debug-commands)
+4. [Phase-Specific Issues](#4-phase-specific-issues)
+5. [Quality Gates](#5-quality-gates)
+6. [Evaluation Metrics](#6-evaluation-metrics)
+7. [External Dependencies](#7-external-dependencies)
+8. [Quick Diagnostic Script](#quick-diagnostic-script)
 
 ---
 
@@ -110,140 +113,221 @@ cat outputs/degradation_summary.json | jq '.degradations | length'
 
 ---
 
-## Common Failure Patterns
 
-| Symptom | Likely Cause | Solution |
-|---------|--------------|----------|
-| Empty `citations.json` | Citation population skipped | Verify Edison API key is set; check `citations_data.json` exists |
-| No `sources/` directory | Source acquisition not run | Verify literature workflow completed; check logs for errors |
-| Placeholder text in sections | Evidence not available | Check `sources/*/evidence.json` files exist and have content |
-| All gates pass but output is poor | Gates in warn mode | Review `degradation_summary.json` for warnings |
-| Missing `metrics.json` | Analysis scripts failed | Check `analysis/` folder has executable scripts; review logs |
-| Low evaluation score | Output quality issues | Review `evaluation_results.json` for specific metric failures |
-| Pipeline halts early | Phase failure | Check `workflow_context.json` for error details |
+## 2. Common Failure Patterns
 
-### Empty Citations
-
-**Symptoms:** `bibliography/citations.json` is empty or missing.
-
-**Diagnosis:**
-```bash
-# Check raw Edison results
-cat citations_data.json | jq length
-
-# If empty, Edison search failed
-# If has data, citation population failed
-```
-
-**Solutions:**
-1. Verify `EDISON_API_KEY` environment variable is set
-2. Check `citations_data.json` for error messages
-3. Verify research question in `project.json` is searchable
-
-### Missing Evidence
-
-**Symptoms:** Section writers produce placeholder text.
-
-**Diagnosis:**
-```bash
-# Count sources with evidence
-for d in sources/*/; do
-  if [ -f "${d}evidence.json" ]; then
-    count=$(cat "${d}evidence.json" | jq length)
-    echo "${d}: ${count} items"
-  else
-    echo "${d}: NO EVIDENCE FILE"
-  fi
-done
-```
-
-**Solutions:**
-1. Verify sources were downloaded (check `sources/*/raw/`)
-2. Run evidence extraction manually if needed
-3. Check source documents are parseable (not scanned images)
-
-### Quality Gate Failures
-
-**Symptoms:** Pipeline produces warnings or blocks on quality gates.
-
-**Diagnosis:**
-```bash
-# Check degradation summary
-cat outputs/degradation_summary.json | jq '.degradations[] | {stage, reason_code, severity}'
-```
-
-**Solutions:**
-1. Review specific gate that triggered
-2. Add missing evidence or citations
-3. Switch gate to warn mode if blocking is not desired
+| Symptom | Cause | Fix | Reference |
+|---------|-------|-----|-----------|
+| Empty citations.json | Citation population not called | Enable citation flow in literature workflow | [#145](https://github.com/giatenica/gia-agentic-short/issues/145) |
+| No sources/ directory | Source acquisition not run | Run source acquisition after literature search | [#146](https://github.com/giatenica/gia-agentic-short/issues/146), [#150](https://github.com/giatenica/gia-agentic-short/issues/150) |
+| Placeholder text in sections | Evidence not available | Verify sources/*/evidence.json exist and are populated | |
+| "Evidence is not yet available" | Evidence pipeline not enabled | Set `evidence_pipeline: true` in workflow_context | |
+| Gates all pass but output poor | Gates disabled or thresholds too low | Check gate configuration and enable strict mode | [#149](https://github.com/giatenica/gia-agentic-short/issues/149) |
+| Analysis metrics missing | No analysis scripts executed | Run analysis execution (A24) before writing | [#148](https://github.com/giatenica/gia-agentic-short/issues/148) |
+| "Results are pending metric computation" | outputs/metrics.json missing | Execute data analysis and generate metrics | |
+| No PDF output | LaTeX compilation failed | Check temp/compile.log for errors | |
+| Missing bibliography entries | references.bib not generated | Verify citations_data.json populated | |
+| Section writers downgrade | Required artifacts missing | Follow data flow verification checklist | |
 
 ---
 
-## Debug Commands
 
-### Pipeline Status
-
-```bash
-# Full pipeline status
-python -c "
-from src.pipeline.context import WorkflowContext
-ctx = WorkflowContext.read_json('workflow_context.json')
-if ctx:
-    print(f'Success: {ctx.success}')
-    print(f'Phases: {list(ctx.phase_results.keys())}')
-    print(f'Errors: {ctx.errors}')
-"
-```
+## 3. Debug Commands
 
 ### Citation Flow
 
+Check if citations are being captured:
+
 ```bash
-# Count citations at each stage
-echo "Edison results: $(cat citations_data.json 2>/dev/null | jq length || echo 0)"
-echo "Bibliography: $(cat bibliography/citations.json 2>/dev/null | jq length || echo 0)"
-echo "Verified: $(cat bibliography/citations.json 2>/dev/null | jq '[.[] | select(.status=="verified")] | length' || echo 0)"
+# Count citations in primary registry
+cat bibliography/citations.json | jq length
+
+# Count citations in data file
+cat citations_data.json | jq length
+
+# List all citation keys
+cat bibliography/citations.json | jq -r '.[].key'
+
+# Verify citation in literature review
+grep -c "\\cite{" LITERATURE_REVIEW.md
 ```
 
-### Evidence Coverage
+### Evidence Availability
+
+Check if evidence extraction is working:
 
 ```bash
-# Check evidence distribution
-for d in sources/*/; do
-  name=$(basename "$d")
-  count=$(cat "${d}evidence.json" 2>/dev/null | jq length || echo "0")
-  echo "$name: $count items"
-done | sort -t: -k2 -n -r
+# Count evidence files
+find sources -name 'evidence.json' | wc -l
+
+# List all evidence files
+find sources -name 'evidence.json'
+
+# Check evidence items per source
+for f in sources/*/evidence.json; do
+  echo "$f: $(jq length $f) items"
+done
+
+# Verify evidence types
+jq -r '.[].type' sources/*/evidence.json | sort | uniq -c
 ```
 
 ### Section Quality
 
+Check for degraded output:
+
 ```bash
-# Check for common issues
-echo "=== Placeholder Text ==="
-grep -l 'Evidence is not yet available' outputs/sections/*.tex 2>/dev/null
+# Find all placeholder patterns
+grep -r "Evidence is not yet available" outputs/
+grep -r "No quote evidence items" outputs/
+grep -r "Results are pending" outputs/
+grep -r "statements are non-definitive" outputs/
 
-echo "=== Empty Sections ==="
-for f in outputs/sections/*.tex; do
-  size=$(wc -c < "$f")
-  if [ "$size" -lt 500 ]; then
-    echo "$f: $size bytes (possibly empty)"
-  fi
-done
+# Count citations in sections
+grep -c "\\cite{" outputs/sections/*.tex
 
-echo "=== Missing Citations ==="
-grep -l '\[CITATION NEEDED\]' outputs/sections/*.tex 2>/dev/null
+# Check section file sizes
+ls -lh outputs/sections/*.tex
 ```
 
-### Analysis Output
+### Metrics and Analysis
+
+Check if computational analysis ran:
 
 ```bash
-# Check analysis artifacts
-echo "Metrics: $(cat outputs/metrics.json 2>/dev/null | jq length || echo 0)"
-echo "Claims: $(cat claims/claims.json 2>/dev/null | jq length || echo 0)"
-echo "Artifacts: $(cat outputs/artifacts.json 2>/dev/null | jq '.outputs | length' || echo 0)"
+# Check metrics file
+cat outputs/metrics.json | jq length
+
+# List metric types
+jq -r '.[].metric_type' outputs/metrics.json | sort | uniq -c
+
+# Check artifacts
+ls -la outputs/artifacts.json
+
+# Verify claims referencing metrics
+jq -r '.[] | select(.metric_keys | length > 0) | .claim_id' claims/claims.json
+```
+
+### Workflow State
+
+Check overall pipeline state:
+
+```bash
+# Check workflow context (if available)
+cat full_pipeline_context.json | jq '.success, .errors'
+
+# List all generated artifacts
+find . -name '*.json' -o -name '*.md' -o -name '*.tex' | sort
+
+# Check file timestamps to see pipeline progression
+ls -lt *.md outputs/sections/*.tex | head -20
 ```
 
 ---
+
+
+## 4. Phase-Specific Issues
+
+### Phase 1: Intake Issues
+
+**Problem:** Data analysis fails or produces incomplete results
+
+**Diagnosis:**
+```bash
+# Check project.json structure
+cat project.json | jq .
+
+# Verify data files are accessible
+ls -la data/
+```
+
+**Solutions:**
+- Ensure project.json has required fields: `project_title`, `research_question`
+- Verify data files are in supported formats (CSV, JSON, Excel)
+- Check data file permissions
+
+**Problem:** RESEARCH_OVERVIEW.md is too generic
+
+**Solutions:**
+- Provide more detailed project.json with background and goals
+- Add notes.md with additional context
+- Include preliminary_findings in project.json
+
+### Phase 2: Literature Issues
+
+**Problem:** Literature search returns no results
+
+**Diagnosis:**
+```bash
+# Check Edison API configuration
+echo $EDISON_API_KEY
+
+# Check citations_data.json
+cat citations_data.json
+```
+
+**Solutions:**
+- Verify EDISON_API_KEY environment variable is set
+- Check network connectivity
+- Review search terms in PROJECT_PLAN.md
+- Enable graceful degradation if API unavailable
+
+**Problem:** Sources not acquired after literature search
+
+**Solutions:**
+- Run source acquisition explicitly: `python scripts/run_source_acquisition.py <project>`
+- Check PDF download configuration
+- Verify DOI/URL availability in citations_data.json
+
+### Phase 3: Gap Resolution Issues
+
+**Problem:** Claims not linking to evidence
+
+**Diagnosis:**
+```bash
+# Check claims structure
+cat claims/claims.json | jq '.[0]'
+
+# Verify evidence_keys in claims
+jq -r '.[].evidence_keys[]' claims/claims.json
+```
+
+**Solutions:**
+- Ensure evidence pipeline ran (Phase 2)
+- Verify evidence.json files exist in sources/
+- Check that evidence items have unique IDs
+
+### Phase 4: Writing Issues
+
+**Problem:** All sections have placeholder text
+
+**Root cause:** Missing prerequisite artifacts
+
+**Solutions:**
+1. Verify evidence availability (see Debug Commands)
+2. Check citation registry population
+3. Ensure metrics.json exists for Results/Methods sections
+4. Enable evidence_pipeline in workflow_context
+
+**Problem:** LaTeX compilation fails
+
+**Diagnosis:**
+```bash
+# Check LaTeX logs
+cat temp/compile.log
+
+# Verify main.tex structure
+head -50 temp/main.tex
+```
+
+**Solutions:**
+- Install required LaTeX packages
+- Check for invalid LaTeX commands in sections
+- Verify bibliography file exists
+- Review compile.log for specific errors
+
+---
+
 
 ## Quality Gates
 
@@ -283,6 +367,7 @@ result = await run_full_pipeline(
 ```
 
 ---
+
 
 ## Evaluation Metrics
 
@@ -327,14 +412,123 @@ result = await run_full_pipeline(
 
 ---
 
+
+## 5. External Dependencies
+
+### Required API Keys
+
+| Service | Environment Variable | Used For | Required? |
+|---------|---------------------|----------|-----------|
+| Anthropic | `ANTHROPIC_API_KEY` | All agent operations | Yes |
+| Edison | `EDISON_API_KEY` | Literature search | No (degraded mode) |
+| Crossref | N/A | Citation verification | No |
+
+**Check API key configuration:**
+```bash
+# Verify keys are set (without exposing values)
+env | grep -E "(ANTHROPIC|EDISON)_API_KEY" | sed 's/=.*/=***/'
+```
+
+### LaTeX Installation
+
+**Required for PDF generation:**
+- pdflatex
+- bibtex
+- Standard packages: amsmath, graphicx, hyperref, natbib
+
+**Verify installation:**
+```bash
+pdflatex --version
+bibtex --version
+```
+
+### Python Dependencies
+
+**Check installed packages:**
+```bash
+pip list | grep -E "(anthropic|pydantic|jsonschema)"
+```
+
+**Install missing dependencies:**
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+
+## Quick Diagnostic Script
+
+Save this as `diagnose_pipeline.sh` for quick health checks:
+
+```bash
+#!/bin/bash
+# Pipeline health check script
+
+PROJECT=$1
+if [ -z "$PROJECT" ]; then
+  echo "Usage: $0 <project_folder>"
+  exit 1
+fi
+
+cd "$PROJECT" || exit 1
+
+echo "=== Pipeline Health Check ==="
+echo
+
+echo "Phase 1 (Intake):"
+[ -f "project.json" ] && echo "✓ project.json" || echo "✗ project.json"
+[ -f "RESEARCH_OVERVIEW.md" ] && echo "✓ RESEARCH_OVERVIEW.md" || echo "✗ RESEARCH_OVERVIEW.md"
+echo
+
+echo "Phase 2 (Literature):"
+[ -f "citations_data.json" ] && echo "✓ citations_data.json ($(jq length citations_data.json 2>/dev/null || echo 0) entries)" || echo "✗ citations_data.json"
+[ -f "bibliography/citations.json" ] && echo "✓ bibliography/citations.json ($(jq length bibliography/citations.json 2>/dev/null || echo 0) entries)" || echo "✗ bibliography/citations.json"
+[ -d "sources" ] && echo "✓ sources/ ($(find sources -name 'evidence.json' 2>/dev/null | wc -l) evidence files)" || echo "✗ sources/"
+echo
+
+echo "Phase 3 (Gap Resolution):"
+[ -f "claims/claims.json" ] && echo "✓ claims/claims.json ($(jq length claims/claims.json 2>/dev/null || echo 0) claims)" || echo "✗ claims/claims.json"
+echo
+
+echo "Phase 4 (Writing):"
+[ -d "outputs/sections" ] && echo "✓ outputs/sections/ ($(ls outputs/sections/*.tex 2>/dev/null | wc -l) files)" || echo "✗ outputs/sections/"
+[ -f "temp/main.tex" ] && echo "✓ temp/main.tex" || echo "✗ temp/main.tex"
+
+echo
+echo "Checking for placeholder text..."
+if grep -rq "Evidence is not yet available" outputs/ 2>/dev/null; then
+  echo "⚠ Placeholder text found in outputs/"
+else
+  echo "✓ No placeholder text"
+fi
+
+echo
+echo "=== End Health Check ==="
+```
+
+---
+
+
 ## Getting Help
 
-If you encounter issues not covered here:
+If issues persist after following this guide:
 
-1. Check the logs in your terminal for error messages
-2. Review `outputs/degradation_summary.json` for pipeline warnings
-3. Check `workflow_context.json` for phase completion status
-4. Open an issue on the repository with:
-   - Error message or symptom
-   - Relevant file contents (sanitized)
-   - Steps to reproduce
+1. Check the GitHub issues for similar problems
+2. Review logs in `.evidence/` and `temp/` directories
+3. Run the pipeline with increased verbosity/tracing
+4. Examine `full_pipeline_context.json` for error details
+5. Open a new issue with:
+   - Pipeline phase where failure occurred
+   - Error messages or symptoms
+   - Output of diagnostic script above
+   - Relevant log snippets
+
+---
+
+
+---
+
+**Author:** Gia Tenica*
+
+*Gia Tenica is an anagram for Agentic AI. Gia is a fully autonomous AI researcher, for more information see: https://giatenica.com
