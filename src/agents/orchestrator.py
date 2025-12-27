@@ -46,8 +46,16 @@ from .inter_agent_protocol import (
     build_response_message,
     validate_agent_message,
 )
+from .task_decomposition import (
+    SubtaskRunRecord,
+    aggregate_subtask_runs,
+    decompose_task_via_llm,
+    normalize_task_decomposition,
+    validate_task_decomposition,
+)
 from src.llm.claude_client import ClaudeClient
 from src.tracing import get_tracer, safe_set_current_span_attributes
+from src.utils.project_layout import ensure_project_outputs_layout
 
 
 class ExecutionMode(Enum):
@@ -963,6 +971,119 @@ class AgentOrchestrator:
         )
         self._append_inter_agent_message_artifact(msg)
         return msg
+
+    async def execute_decomposed_task(
+        self,
+        *,
+        task_text: str,
+        context: Dict[str, Any],
+        decomposition_override: Optional[Dict[str, Any]] = None,
+        artifact_filename: str = "subtasks_aggregate.json",
+    ) -> Dict[str, Any]:
+        """Decompose a high-level task, execute subtasks, and aggregate results.
+
+        The decomposition step is prompt-driven (LLM) unless `decomposition_override`
+        is provided.
+
+        Subtasks are routed through the agent registry and executed independently.
+        Failures are isolated so one failing subtask does not crash the run.
+
+        Args:
+            task_text: High-level task description.
+            context: Base context to provide to each subtask.
+            decomposition_override: Optional decomposition dict (useful for tests).
+            artifact_filename: Output artifact filename written under outputs/.
+
+        Returns:
+            Aggregate artifact payload dict (also written to disk).
+        """
+
+        if decomposition_override is not None:
+            decomposition = normalize_task_decomposition(decomposition_override)
+            validate_task_decomposition(decomposition)
+        else:
+            decomposition = await decompose_task_via_llm(
+                client=self.client,
+                task_text=task_text,
+                available_agent_ids=AgentRegistry.list_ids(),
+            )
+
+        subtasks = list(decomposition.get("subtasks") or [])
+
+        if any((st.get("depends_on") or []) for st in subtasks):
+            raise ValueError("Subtask dependencies are not supported yet (depends_on must be empty)")
+
+        async def _run_one(subtask: Dict[str, Any]) -> SubtaskRunRecord:
+            subtask_id = str(subtask.get("id") or "")
+            agent_id = str(subtask.get("agent_id") or "")
+            inputs = subtask.get("inputs")
+            if not isinstance(inputs, dict):
+                inputs = {}
+
+            spec = AgentRegistry.get(agent_id)
+            if spec is None:
+                return SubtaskRunRecord(
+                    subtask_id=subtask_id,
+                    agent_id=agent_id,
+                    success=False,
+                    error=f"Unknown agent_id: {agent_id}",
+                    result=None,
+                )
+
+            merged_context = dict(context)
+            merged_context.update(inputs)
+
+            missing: List[str] = []
+            for key in (spec.input_schema.required or []):
+                if key not in merged_context:
+                    missing.append(key)
+
+            if missing:
+                return SubtaskRunRecord(
+                    subtask_id=subtask_id,
+                    agent_id=agent_id,
+                    success=False,
+                    error=f"Missing required inputs for {agent_id}: {', '.join(sorted(missing))}",
+                    result=None,
+                )
+
+            try:
+                result = await self.execute_agent(agent_id, merged_context, use_cache=True)
+                if result.success:
+                    return SubtaskRunRecord(
+                        subtask_id=subtask_id,
+                        agent_id=agent_id,
+                        success=True,
+                        error=None,
+                        result=result.to_dict(),
+                    )
+                return SubtaskRunRecord(
+                    subtask_id=subtask_id,
+                    agent_id=agent_id,
+                    success=False,
+                    error=result.error or "Subtask failed",
+                    result=None,
+                )
+            except Exception as e:
+                return SubtaskRunRecord(
+                    subtask_id=subtask_id,
+                    agent_id=agent_id,
+                    success=False,
+                    error=str(e),
+                    result=None,
+                )
+
+        runs = await asyncio.gather(*[_run_one(st) for st in subtasks])
+        aggregate = aggregate_subtask_runs(decomposition=decomposition, runs=list(runs))
+
+        paths = ensure_project_outputs_layout(self.project_folder)
+        artifact_path = paths.outputs_dir / artifact_filename
+        aggregate["artifact_path"] = str(artifact_path.relative_to(paths.project_folder))
+        artifact_path.write_text(
+            json.dumps(aggregate, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        return aggregate
     
     def get_execution_summary(self) -> Dict[str, Any]:
         """Get summary of all executions."""
