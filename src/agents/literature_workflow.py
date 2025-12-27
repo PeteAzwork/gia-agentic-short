@@ -47,6 +47,7 @@ from src.utils.workflow_issue_tracking import write_workflow_issue_tracking
 from src.evidence.gates import EvidenceGateConfig, EvidenceGateError, enforce_evidence_gate
 from src.evidence.pipeline import EvidencePipelineConfig, run_local_evidence_pipeline
 from src.agents.writing_review_integration import run_writing_review_stage
+from src.citations.source_map import build_source_citation_map, write_source_citation_map
 from src.tracing import init_tracing, get_tracer
 from loguru import logger
 
@@ -249,6 +250,12 @@ class LiteratureWorkflow:
                 # Explicit keys in workflow_context override existing context values, including core keys.
                 context.update(workflow_context)
 
+            # Default to running the local evidence pipeline unless callers explicitly
+            # disable it. This keeps the workflow offline-friendly while ensuring
+            # deterministic section writers have a chance to find evidence artifacts.
+            if "evidence_pipeline" not in context:
+                context["evidence_pipeline"] = {"enabled": True}
+
             # Optional Step 0: Local evidence pipeline (discover -> ingest -> parse -> write parsed.json -> extract evidence)
             pipeline_cfg = EvidencePipelineConfig.from_context(context)
             if pipeline_cfg.enabled:
@@ -411,6 +418,19 @@ class LiteratureWorkflow:
                     span.set_attribute("error", str(e))
                     # Set empty result so subsequent steps don't fail
                     context["literature_synthesis"] = {}
+
+            # Best-effort: build source -> citation mapping for deterministic writers.
+            # Requires bibliography/citations.json (from literature synthesis) and
+            # sources/<source_id>/raw/* (from evidence pipeline or manual placement).
+            try:
+                mapping = build_source_citation_map(project_folder)
+                context["source_citation_map"] = mapping
+                write_source_citation_map(project_folder, mapping)
+            except Exception as e:
+                msg = f"Failed to build source_citation_map: {e}"
+                logger.warning(msg)
+                result.errors.append(msg)
+                context["source_citation_map"] = {}
             
             # Step 4: Paper Structure
             logger.info("Step 4/5: Creating paper structure...")

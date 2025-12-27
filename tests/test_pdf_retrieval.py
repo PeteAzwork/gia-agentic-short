@@ -119,6 +119,64 @@ def test_pdf_retrieval_uses_semantic_scholar_fallback_when_arxiv_fails(temp_proj
 
 
 @pytest.mark.unit
+def test_pdf_retrieval_writes_error_metadata_on_failure(temp_project_folder):
+    calls = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["count"] += 1
+        return httpx.Response(404, content=b"not found")
+
+    client = httpx.Client(transport=_mock_transport(handler))
+    tool = PdfRetrievalTool(str(temp_project_folder), client=client, max_pdf_bytes=10_000)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        tool.retrieve_arxiv_pdf("1234.56789", use_semantic_scholar_fallback=False)
+
+    meta_path = temp_project_folder / "sources" / "arxiv_1234.56789" / "raw" / "retrieval.json"
+    assert meta_path.exists()
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    assert meta["ok"] is False
+    assert meta["provider"] == "arxiv"
+    assert meta["requested"]["arxiv_id"] == "1234.56789"
+    assert isinstance(meta.get("error"), dict)
+    assert isinstance(meta.get("attempts"), list)
+    assert len(meta["attempts"]) == 1
+    assert meta["attempts"][0]["ok"] is False
+    assert calls["count"] == 1
+
+
+@pytest.mark.unit
+def test_pdf_retrieval_honors_retry_after_for_429(temp_project_folder, monkeypatch):
+    pdf_bytes = b"%PDF-1.7\n%%EOF\n"
+    url = "https://example.com/paper.pdf"
+    state = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        state["count"] += 1
+        if state["count"] == 1:
+            return httpx.Response(429, headers={"retry-after": "1"}, content=b"rate limited")
+        return httpx.Response(200, headers={"content-type": "application/pdf"}, content=pdf_bytes)
+
+    slept: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        slept.append(float(seconds))
+
+    monkeypatch.setattr("src.evidence.pdf_retrieval.time.sleep", fake_sleep)
+
+    client = httpx.Client(transport=_mock_transport(handler))
+    tool = PdfRetrievalTool(str(temp_project_folder), client=client, max_pdf_bytes=10_000)
+
+    result = tool.retrieve_pdf_url(url)
+    raw_pdf = temp_project_folder / result.raw_pdf_path
+    assert raw_pdf.exists()
+    assert raw_pdf.read_bytes() == pdf_bytes
+
+    assert state["count"] == 2
+    assert slept == [1.0]
+
+
+@pytest.mark.unit
 def test_parse_arxiv_id_accepts_prefix_url_and_pdf_suffix():
     assert parse_arxiv_id("arXiv:1234.56789") == "1234.56789"
     assert parse_arxiv_id("https://arxiv.org/abs/1234.56789") == "1234.56789"

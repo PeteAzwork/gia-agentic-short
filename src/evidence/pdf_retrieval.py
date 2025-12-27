@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,6 +53,57 @@ def _safe_filename(stem: str) -> str:
             safe.append("_")
     out = "".join(safe).strip("_")
     return out or "document"
+
+
+def _stable_id_from_url(url: str) -> str:
+    h = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    return f"pdf:{h[:12]}"
+
+
+def _try_read_cached_retrieval(metadata_path: Path) -> Optional[Dict[str, Any]]:
+    if not metadata_path.exists() or not metadata_path.is_file():
+        return None
+    try:
+        payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _retry_after_seconds(headers: Any) -> Optional[float]:
+    """Parse Retry-After header as seconds.
+
+    Keep parsing intentionally minimal and deterministic. We only honor integer
+    seconds and clamp to a small maximum so CLI workflows remain responsive.
+    """
+    try:
+        value = headers.get("retry-after") if headers is not None else None
+    except Exception:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        seconds = float(int(value.strip()))
+    except (TypeError, ValueError):
+        return None
+    if seconds < 0:
+        return None
+    return min(2.0, seconds)
+
+
+def _error_dict(exc: BaseException) -> Dict[str, str]:
+    return {
+        "type": type(exc).__name__,
+        "message": str(exc),
+    }
+
+
+def _write_retrieval_json(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def parse_arxiv_id(value: str) -> str:
@@ -180,6 +232,163 @@ class PdfRetrievalTool:
 
         return h.hexdigest(), total, content_type
 
+    def _sleep_backoff(self, attempt: int) -> None:
+        # Simple exponential backoff; keep it short because this is used in CLI workflows.
+        delay = min(2.0, 0.5 * (2 ** (attempt - 1)))
+        time.sleep(delay)
+
+    def _sleep_retry_after(self, seconds: float) -> None:
+        time.sleep(seconds)
+
+    def _download_with_retries(self, url: str, dest_path: Path, *, max_attempts: int = 3) -> tuple[str, int, Optional[str]]:
+        last_exc: Optional[Exception] = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return self._download_to_path(url, dest_path)
+            except ValueError as exc:
+                # Deterministic failures (e.g., max size exceeded) should not be retried.
+                raise
+            except httpx.HTTPStatusError as exc:
+                last_exc = exc
+
+                status = exc.response.status_code if exc.response is not None else None
+                # Do not retry "not found".
+                if status == 404:
+                    break
+
+                if attempt >= max_attempts:
+                    break
+
+                # Respect Retry-After when provided (common for 429).
+                retry_after = _retry_after_seconds(exc.response.headers if exc.response is not None else None)
+                if retry_after is not None and status in {429, 503}:
+                    self._sleep_retry_after(retry_after)
+                else:
+                    self._sleep_backoff(attempt)
+            except (httpx.TimeoutException, httpx.RequestError) as exc:
+                last_exc = exc
+                if attempt >= max_attempts:
+                    break
+                self._sleep_backoff(attempt)
+
+        assert last_exc is not None
+        raise last_exc
+
+    def retrieve_pdf_url(
+        self,
+        url: str,
+        source_id: Optional[str] = None,
+        filename: Optional[str] = None,
+        max_attempts: int = 3,
+    ) -> RetrievedPdf:
+        """Retrieve a remote PDF into `sources/<source_id>/raw/`.
+
+        The source_id defaults to a stable hash of the URL.
+
+        Caching:
+        - If `sources/<source_id>/raw/retrieval.json` exists and its `retrieved_from`
+          matches the requested URL, this will skip re-downloading.
+
+        Raises:
+            ValueError: For non-HTTPS URLs, invalid source_id, or PDF size exceeding limit.
+            httpx.HTTPError: For network errors.
+        """
+        if not _is_https_url(url):
+            raise ValueError("Only https URLs are allowed")
+
+        sid = source_id or _stable_id_from_url(url)
+        validate_source_id(sid)
+
+        store = EvidenceStore(self.project_folder)
+        sp = store.ensure_source_layout(sid)
+
+        metadata_path = sp.raw_dir / "retrieval.json"
+        cached = _try_read_cached_retrieval(metadata_path)
+        if (
+            isinstance(cached, dict)
+            and cached.get("ok") is True
+            and cached.get("retrieved_from") == url
+        ):
+            raw_pdf_path = cached.get("raw_pdf_path")
+            pdf_path: Optional[Path] = None
+            if isinstance(raw_pdf_path, str) and raw_pdf_path:
+                try:
+                    candidate = (store.project_folder / raw_pdf_path).resolve()
+                    if candidate.is_file() and sp.raw_dir.resolve() in candidate.parents:
+                        pdf_path = candidate
+                except OSError:
+                    pdf_path = None
+
+            if pdf_path is None:
+                pdf_candidates = sorted(sp.raw_dir.glob("*.pdf"))
+                if pdf_candidates:
+                    pdf_path = pdf_candidates[0]
+
+            if pdf_path is not None:
+                sha256 = cached.get("sha256")
+                size_bytes = cached.get("size_bytes")
+                if isinstance(sha256, str) and isinstance(size_bytes, int):
+                    return RetrievedPdf(
+                        source_id=sid,
+                        raw_pdf_path=str(pdf_path.relative_to(store.project_folder)),
+                        metadata_path=str(metadata_path.relative_to(store.project_folder)),
+                        sha256=sha256,
+                        size_bytes=size_bytes,
+                        retrieved_from=url,
+                    )
+
+        name = filename
+        if not name:
+            parsed = urlparse(url)
+            name = Path(parsed.path).name or "document.pdf"
+        if not name.lower().endswith(".pdf"):
+            name = f"{name}.pdf"
+        name = _safe_filename(name)
+
+        pdf_path = sp.raw_dir / name
+        attempts: list[Dict[str, Any]] = []
+        try:
+            sha256, size_bytes, content_type = self._download_with_retries(url, pdf_path, max_attempts=max_attempts)
+            attempts.append({"provider": "pdf_url", "ok": True, "retrieved_from": url})
+        except Exception as exc:
+            attempts.append({"provider": "pdf_url", "ok": False, "retrieved_from": url, "error": _error_dict(exc)})
+            record: Dict[str, Any] = {
+                "ok": False,
+                "source_id": sid,
+                "provider": "pdf_url",
+                "requested": {"url": url, "filename": name},
+                "retrieved_from": url,
+                "retrieved_at": _utc_now_iso_z(),
+                "attempts": attempts,
+                "error": _error_dict(exc),
+            }
+            _write_retrieval_json(metadata_path, record)
+            raise
+
+        record: Dict[str, Any] = {
+            "ok": True,
+            "source_id": sid,
+            "provider": "pdf_url",
+            "requested": {"url": url, "filename": name},
+            "retrieved_from": url,
+            "retrieved_at": _utc_now_iso_z(),
+            "sha256": sha256,
+            "size_bytes": size_bytes,
+            "content_type": content_type,
+            "raw_pdf_path": str(pdf_path.relative_to(store.project_folder)),
+            "attempts": attempts,
+        }
+        _write_retrieval_json(metadata_path, record)
+
+        return RetrievedPdf(
+            source_id=sid,
+            raw_pdf_path=str(pdf_path.relative_to(store.project_folder)),
+            metadata_path=str(metadata_path.relative_to(store.project_folder)),
+            sha256=sha256,
+            size_bytes=size_bytes,
+            retrieved_from=url,
+        )
+
     def _semantic_scholar_open_access_pdf_url(self, arxiv_id: str) -> Optional[Dict[str, Any]]:
         """Return OA PDF discovery info via Semantic Scholar Graph API.
 
@@ -260,16 +469,53 @@ class PdfRetrievalTool:
         pdf_path = sp.raw_dir / pdf_name
         metadata_path = sp.raw_dir / "retrieval.json"
 
+        cached = _try_read_cached_retrieval(metadata_path)
+        if isinstance(cached, dict):
+            cached_arxiv = cached.get("requested", {}).get("arxiv_id") if isinstance(cached.get("requested"), dict) else None
+            cached_url = cached.get("retrieved_from")
+            if cached_arxiv == arxiv_id and isinstance(cached_url, str) and cached_url:
+                if pdf_path.exists() and pdf_path.is_file():
+                    sha256 = cached.get("sha256")
+                    size_bytes = cached.get("size_bytes")
+                    if isinstance(sha256, str) and isinstance(size_bytes, int):
+                        return RetrievedPdf(
+                            source_id=sid,
+                            raw_pdf_path=str(pdf_path.relative_to(store.project_folder)),
+                            metadata_path=str(metadata_path.relative_to(store.project_folder)),
+                            sha256=sha256,
+                            size_bytes=size_bytes,
+                            retrieved_from=cached_url,
+                        )
+
         primary_url = arxiv_pdf_url(arxiv_id)
         retrieval_url = primary_url
         semantic_info: Optional[Dict[str, Any]] = None
         arxiv_error: Optional[Dict[str, str]] = None
+        attempts: list[Dict[str, Any]] = []
 
         try:
-            sha256, size_bytes, content_type = self._download_to_path(primary_url, pdf_path)
+            sha256, size_bytes, content_type = self._download_with_retries(primary_url, pdf_path)
             retrieval_used = "arxiv"
+            attempts.append({"provider": "arxiv", "ok": True, "retrieved_from": primary_url})
         except Exception as arxiv_exc:
+            attempts.append({"provider": "arxiv", "ok": False, "retrieved_from": primary_url, "error": _error_dict(arxiv_exc)})
             if not use_semantic_scholar_fallback:
+                record: Dict[str, Any] = {
+                    "ok": False,
+                    "source_id": sid,
+                    "provider": "arxiv",
+                    "requested": {
+                        "arxiv_id": arxiv_id,
+                        "input": arxiv_id_or_url,
+                    },
+                    "retrieved_from": primary_url,
+                    "retrieved_at": _utc_now_iso_z(),
+                    "attempts": attempts,
+                    "error": _error_dict(arxiv_exc),
+                }
+                if pdf_path.exists() and pdf_path.is_file():
+                    record["raw_pdf_path"] = str(pdf_path.relative_to(store.project_folder))
+                _write_retrieval_json(metadata_path, record)
                 raise
 
             arxiv_error = {
@@ -287,12 +533,43 @@ class PdfRetrievalTool:
                     raise RuntimeError("Semantic Scholar fallback metadata missing OA PDF URL")
 
                 retrieval_url = fallback_url
-                sha256, size_bytes, content_type = self._download_to_path(fallback_url, pdf_path)
+                sha256, size_bytes, content_type = self._download_with_retries(fallback_url, pdf_path)
                 retrieval_used = "semantic_scholar"
+                attempts.append({"provider": "semantic_scholar", "ok": True, "retrieved_from": fallback_url})
             except Exception as fallback_exc:
+                attempts.append(
+                    {
+                        "provider": "semantic_scholar",
+                        "ok": False,
+                        "retrieved_from": retrieval_url,
+                        "error": _error_dict(fallback_exc),
+                    }
+                )
+                record: Dict[str, Any] = {
+                    "ok": False,
+                    "source_id": sid,
+                    "provider": "arxiv",
+                    "requested": {
+                        "arxiv_id": arxiv_id,
+                        "input": arxiv_id_or_url,
+                    },
+                    "retrieved_from": primary_url,
+                    "retrieved_at": _utc_now_iso_z(),
+                    "attempts": attempts,
+                    "error": {
+                        "type": "RuntimeError",
+                        "message": f"Semantic Scholar fallback failed: {fallback_exc}",
+                    },
+                    "arxiv_error": arxiv_error,
+                    "semantic_scholar": semantic_info,
+                }
+                if pdf_path.exists() and pdf_path.is_file():
+                    record["raw_pdf_path"] = str(pdf_path.relative_to(store.project_folder))
+                _write_retrieval_json(metadata_path, record)
                 raise RuntimeError(f"Semantic Scholar fallback failed: {fallback_exc}") from arxiv_exc
 
         record: Dict[str, Any] = {
+            "ok": True,
             "source_id": sid,
             "provider": retrieval_used,
             "requested": {
@@ -304,16 +581,15 @@ class PdfRetrievalTool:
             "sha256": sha256,
             "size_bytes": size_bytes,
             "content_type": content_type,
+            "raw_pdf_path": str(pdf_path.relative_to(store.project_folder)),
+            "attempts": attempts,
         }
         if semantic_info is not None:
             record["semantic_scholar"] = semantic_info
         if arxiv_error is not None:
             record["arxiv_error"] = arxiv_error
 
-        metadata_path.write_text(
-            json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        _write_retrieval_json(metadata_path, record)
 
         return RetrievedPdf(
             source_id=sid,
