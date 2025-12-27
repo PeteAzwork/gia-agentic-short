@@ -54,6 +54,17 @@ def _caption_from_stem(stem: str) -> str:
 
 
 def discover_table_tex_paths(project_folder: Path) -> List[Path]:
+    """Discover LaTeX table artifact files.
+
+    Args:
+        project_folder: Project root folder that contains an `outputs/` directory.
+
+    Returns:
+        Sorted list of `.tex` paths under `outputs/tables/`.
+
+        If `outputs/tables/` does not exist, is not a directory, or contains no matching
+        files, returns an empty list.
+    """
     tables_dir = project_folder / "outputs" / "tables"
     if not tables_dir.exists() or not tables_dir.is_dir():
         return []
@@ -61,6 +72,18 @@ def discover_table_tex_paths(project_folder: Path) -> List[Path]:
 
 
 def discover_figure_paths(project_folder: Path) -> List[Path]:
+    """Discover figure artifact files.
+
+    Args:
+        project_folder: Project root folder that contains an `outputs/` directory.
+
+    Returns:
+        Sorted list of figure paths under `outputs/figures/`.
+
+        Only files with extensions in `_FIGURE_EXTS` are included. Hidden files are
+        skipped. If `outputs/figures/` does not exist or is not a directory, returns
+        an empty list.
+    """
     figures_dir = project_folder / "outputs" / "figures"
     if not figures_dir.exists() or not figures_dir.is_dir():
         return []
@@ -74,7 +97,26 @@ def discover_figure_paths(project_folder: Path) -> List[Path]:
 
 
 def generate_tables_include_tex(project_folder: Path) -> Tuple[str, List[str]]:
-    """Return (latex, labels)."""
+    """Generate a LaTeX include file for all table artifacts.
+
+    This scans `outputs/tables/*.tex` and wraps each table in a `table` environment
+    with a deterministic caption and a deterministic, collision-safe label.
+
+    Args:
+        project_folder: Project root folder.
+
+    Returns:
+        Tuple of:
+        - latex: The contents of the generated include file.
+        - labels: A list of resolved labels in the same order as discovered artifacts.
+
+        Labels are formatted as `tab:<sanitized_stem>` when unique; if multiple stems
+        sanitize to the same base, a short hash suffix is appended:
+        `tab:<sanitized_stem>_<sha1_6>`.
+
+        If `outputs/tables/` does not exist or contains no tables, the returned LaTeX
+        still contains the header comment block and `labels` is empty.
+    """
     paths = discover_table_tex_paths(project_folder)
     lines: List[str] = []
     labels: List[str] = []
@@ -85,7 +127,6 @@ def generate_tables_include_tex(project_folder: Path) -> Tuple[str, List[str]]:
 
     for p in paths:
         stem = p.stem
-        label = ""
         caption = _caption_from_stem(stem)
         labels.append(stem)
 
@@ -110,7 +151,27 @@ def generate_tables_include_tex(project_folder: Path) -> Tuple[str, List[str]]:
 
 
 def generate_figures_include_tex(project_folder: Path) -> Tuple[str, List[str]]:
-    """Return (latex, labels)."""
+    """Generate a LaTeX include file for all figure artifacts.
+
+    This scans `outputs/figures/*` and wraps each supported file in a `figure`
+    environment with `\\includegraphics`, a deterministic caption, and a
+    deterministic, collision-safe label.
+
+    Args:
+        project_folder: Project root folder.
+
+    Returns:
+        Tuple of:
+        - latex: The contents of the generated include file.
+        - labels: A list of resolved labels in the same order as discovered artifacts.
+
+        Labels are formatted as `fig:<sanitized_stem>` when unique; if multiple stems
+        sanitize to the same base, a short hash suffix is appended:
+        `fig:<sanitized_stem>_<sha1_6>`.
+
+        If `outputs/figures/` does not exist or contains no supported figures, the
+        returned LaTeX still contains the header comment block and `labels` is empty.
+    """
     paths = discover_figure_paths(project_folder)
     lines: List[str] = []
     labels: List[str] = []
@@ -121,7 +182,6 @@ def generate_figures_include_tex(project_folder: Path) -> Tuple[str, List[str]]:
 
     for p in paths:
         stem = p.stem
-        label = ""
         caption = _caption_from_stem(stem)
         labels.append(stem)
 
