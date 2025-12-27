@@ -480,7 +480,7 @@ class EdisonClient:
         This method tries structured attributes first, then falls back to
         parsing embedded references from the formatted answer.
         """
-        citations = []
+        citations: List[Citation] = []
         
         # Try different possible attributes where citations might be stored
         raw_citations = None
@@ -488,10 +488,15 @@ class EdisonClient:
         # PQATaskResponse has citations attribute
         if hasattr(task_response, 'citations'):
             raw_citations = task_response.citations
+            logger.debug(f"Found .citations attribute with {len(raw_citations) if raw_citations else 0} items")
         elif hasattr(task_response, 'references'):
             raw_citations = task_response.references
+            logger.debug(f"Found .references attribute with {len(raw_citations) if raw_citations else 0} items")
         elif hasattr(task_response, 'papers'):
             raw_citations = task_response.papers
+            logger.debug(f"Found .papers attribute with {len(raw_citations) if raw_citations else 0} items")
+        else:
+            logger.debug("No structured citation attributes found on task_response")
         
         if raw_citations:
             for ref in raw_citations:
@@ -536,94 +541,110 @@ class EdisonClient:
         if not citations:
             formatted_answer = getattr(task_response, 'formatted_answer', None)
             if formatted_answer and isinstance(formatted_answer, str):
+                logger.debug(f"Falling back to formatted_answer text extraction ({len(formatted_answer)} chars)")
                 citations = self._extract_citations_from_text(formatted_answer)
-                if citations:
-                    logger.info(f"Extracted {len(citations)} citations from formatted_answer text")
+            else:
+                logger.debug("No formatted_answer available for text extraction fallback")
         
         if citations:
             logger.info(f"Parsed {len(citations)} citations from Edison response")
         else:
-            logger.debug("No citations found in Edison response")
+            logger.warning("No citations found in Edison response (checked structured attrs and formatted_answer)")
         
         return citations
     
     def _extract_citations_from_text(self, text: str) -> List[Citation]:
         """Extract citations from Edison's formatted_answer References section.
         
-        Edison formatted_answer typically ends with a References section like:
+        Edison PQATaskResponse.formatted_answer typically ends with a References
+        section containing entries like:
         
         References
         
-        1. (key pages X-Y): Author Name. Title. Journal, Volume:Pages, Month Year.
-           URL: https://doi.org/..., doi:...
+        1. (broussard2019timevariationofdualclass pages 10-12): John Paul Broussard
+           and Mika Vaihekoski. Time-variation of dual-class premia. Capital Markets:
+           Asset Pricing & Valuation eJournal, Feb 2019. URL: https://doi.org/10.2139/ssrn.3342202,
+           doi:10.2139/ssrn.3342202. This article has 3 citations.
         
-        This method parses those entries into Citation objects.
+        This method parses those entries into Citation objects, deduplicating by DOI.
         """
-        citations = []
+        citations: List[Citation] = []
+        seen_dois: set[str] = set()
         seen_titles: set[str] = set()
         
         # Find References section (case-insensitive, may have markdown headers)
         refs_match = re.search(r'(?:^|\n)(?:#+\s*)?References?\s*\n', text, re.IGNORECASE)
         if not refs_match:
+            logger.debug("No References section found in Edison formatted_answer")
             return citations
         
         refs_section = text[refs_match.end():]
+        logger.debug(f"Found References section with {len(refs_section)} chars")
         
-        # Split into individual reference entries
+        # Split into individual reference entries (numbered lines)
         entries = re.split(r'\n(?=\d+\.\s)', refs_section)
+        logger.debug(f"Split into {len(entries)} potential reference entries")
         
         for entry in entries:
             entry = entry.strip()
             if not entry or not entry[0].isdigit():
                 continue
             
-            # Try to extract DOI first (most reliable identifier)
-            doi_match = re.search(r'doi:([^\s,\]]+)', entry, re.IGNORECASE)
-            doi = doi_match.group(1).rstrip('.') if doi_match else None
+            # Extract DOI first (most reliable identifier for deduplication)
+            # DOI format: 10.XXXXX/XXXXX - can contain letters, numbers, dots, slashes, dashes
+            # Stop at whitespace, comma, or end of sentence that isn't part of DOI
+            doi_match = re.search(r'doi:\s*(10\.[^\s,]+)', entry, re.IGNORECASE)
+            doi = doi_match.group(1).rstrip('.,;') if doi_match else None
             
-            # Try to extract URL
-            url_match = re.search(r'(?:URL:|https?://)([^\s,]+)', entry)
-            url = url_match.group(0) if url_match else None
-            if url and url.startswith('URL:'):
-                url = url[4:].strip()
+            # Skip if we've already processed this DOI (Edison returns same paper
+            # multiple times with different page ranges)
+            if doi and doi.lower() in seen_dois:
+                logger.debug(f"Skipping duplicate DOI: {doi}")
+                continue
+            if doi:
+                seen_dois.add(doi.lower())
             
-            # Try to extract year
+            # Extract URL (Edison format: "URL: https://...")
+            url_match = re.search(r'URL:\s*(https?://[^\s,]+)', entry)
+            url = url_match.group(1).rstrip('.,') if url_match else None
+            
+            # Extract year (look for 4-digit year in reasonable range)
             year_match = re.search(r'\b(19|20)\d{2}\b', entry)
             year = int(year_match.group(0)) if year_match else 0
             
-            # Edison format: "N. (key): Authors. Title. Journal, Vol:Pages, Date."
-            # The challenge is periods in author initials (e.g., "Robert C. Merton")
-            # Strategy: Find the pattern after the citation key, look for title which
-            # typically starts with a capital letter after authors
+            # Edison format: "N. (citation_key pages X-Y): Authors. Title. Journal, Date. URL: ..., doi:... This article has N citations."
+            # Step 1: Remove entry number and citation key prefix
+            cleaned = re.sub(r'^\d+\.\s*\([^)]+\):\s*', '', entry)
             
-            # Remove entry number and citation key
-            cleaned = re.sub(r'^\d+\.\s*(?:\([^)]+\):\s*)?', '', entry)
+            # Step 2: Remove trailing metadata "This article has N citations."
+            cleaned = re.sub(r'\s*This article has \d+ citations?\.\s*$', '', cleaned, flags=re.IGNORECASE)
             
-            # Split on ". " but keep initials together (period followed by space and capital)
-            # Authors typically end before a capitalized title word
-            # Look for pattern: "Author Names. Title Text. Journal,"
+            # Step 3: Remove URL and DOI metadata from end
+            cleaned = re.sub(r'\s*URL:\s*https?://[^\s,]+[,\s]*', ' ', cleaned)
+            cleaned = re.sub(r'\s*doi:\s*10\.[^\s,]+[,\s]*', ' ', cleaned, flags=re.IGNORECASE)
+            cleaned = cleaned.strip().rstrip('.,')
             
-            # Find all ". " positions
+            if not cleaned:
+                continue
+            
+            # Parse: "Authors. Title. Journal, Date"
+            # Strategy: Split on ". " but handle author initials (e.g., "John P. Smith")
+            # Authors typically contain "and" for multiple authors
+            # Title is the longest segment after authors
+            
+            # Find the first ". " that's not an initial (initial = single uppercase letter before period)
             parts = []
             current = ""
             i = 0
             while i < len(cleaned):
                 if cleaned[i:i+2] == ". ":
-                    # Check if this looks like an initial (single capital letter before period)
-                    # or end of abbreviation (all caps word before period)
                     before_period = current.split()[-1] if current.split() else ""
-                    after_space = cleaned[i+2:i+3] if i+2 < len(cleaned) else ""
-                    
-                    # If the part before period is a single letter or very short caps (initial),
-                    # and followed by another name-like pattern, keep going
-                    is_initial = (len(before_period) <= 2 and before_period.isupper())
-                    
-                    if is_initial and after_space.isupper():
-                        # Likely an initial in a name, keep going
+                    # Check if this is an author initial (single capital letter)
+                    is_initial = (len(before_period) == 1 and before_period.isupper())
+                    if is_initial:
                         current += ". "
                         i += 2
                     else:
-                        # End of a segment
                         parts.append(current.strip())
                         current = ""
                         i += 2
@@ -633,8 +654,8 @@ class EdisonClient:
             if current.strip():
                 parts.append(current.strip())
             
+            # Fallback if splitting didn't work well
             if len(parts) < 2:
-                # Fallback: simple split on first period-space after substantial text
                 simple_parts = cleaned.split('. ', 2)
                 if len(simple_parts) >= 2:
                     parts = simple_parts
@@ -644,37 +665,27 @@ class EdisonClient:
                 title = parts[1].strip() if len(parts) > 1 else ""
                 journal = parts[2].split(',')[0].strip() if len(parts) > 2 else None
                 
-                # Clean up title - remove trailing journal info if attached
+                # Clean up title - remove any trailing journal/date info
                 if ',' in title and not journal:
                     title_parts = title.rsplit(',', 1)
                     if len(title_parts[0]) > _MIN_TITLE_LENGTH_FOR_SPLIT:
                         title = title_parts[0].strip()
                 
-                # Parse authors (handle "and" and commas)
-                authors = []
-                if authors_str:
-                    # Split on " and " first, then handle commas within each part
-                    and_parts = re.split(r'\s+and\s+', authors_str, flags=re.IGNORECASE)
-                    for and_part in and_parts:
-                        # For each part, check if it has commas (multiple authors or name format)
-                        comma_parts = and_part.split(',')
-                        if len(comma_parts) > 1:
-                            # Could be "Last, First" format or multiple authors
-                            # If parts are long, likely multiple authors
-                            for cp in comma_parts:
-                                cp = cp.strip()
-                                if cp and len(cp) > 1:
-                                    authors.append(cp)
-                        else:
-                            and_part = and_part.strip()
-                            if and_part and len(and_part) > 1:
-                                authors.append(and_part)
-                
-                # Skip if we've seen this title (dedup)
+                # Deduplicate by title if no DOI
                 title_key = title.lower()[:_TITLE_DEDUP_KEY_LENGTH]
-                if title_key in seen_titles:
+                if not doi and title_key in seen_titles:
+                    logger.debug(f"Skipping duplicate title: {title[:50]}...")
                     continue
                 seen_titles.add(title_key)
+                
+                # Parse authors (handle "and" separator)
+                authors = []
+                if authors_str:
+                    and_parts = re.split(r'\s+and\s+', authors_str, flags=re.IGNORECASE)
+                    for and_part in and_parts:
+                        and_part = and_part.strip()
+                        if and_part and len(and_part) > 1:
+                            authors.append(and_part)
                 
                 citation = Citation(
                     title=title,
@@ -685,5 +696,7 @@ class EdisonClient:
                     url=url,
                 )
                 citations.append(citation)
+                logger.debug(f"Extracted citation: {title[:50]}... (DOI: {doi})")
         
+        logger.info(f"Extracted {len(citations)} unique citations from Edison formatted_answer")
         return citations

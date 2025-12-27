@@ -169,6 +169,114 @@ class TestEdisonClientInitialization:
         mock_official_client.assert_called_once_with(api_key='test-key')
 
 
+class TestRealEdisonFormat:
+    """Tests for real Edison API response format parsing."""
+    
+    @pytest.mark.unit
+    @patch.dict('os.environ', {'EDISON_API_KEY': ''}, clear=True)
+    def test_extract_citations_from_real_edison_format(self):
+        """Should correctly parse real Edison formatted_answer with citation key prefixes."""
+        client = EdisonClient(api_key=None)
+        
+        # This is the actual format from Edison API
+        formatted_answer = '''
+The literature provides various empirical methods...
+
+References
+
+1. (broussard2019timevariationofdualclass pages 10-12): John Paul Broussard and Mika Vaihekoski. Time-variation of dual-class premia. Capital Markets: Asset Pricing & Valuation eJournal, Feb 2019. URL: https://doi.org/10.2139/ssrn.3342202, doi:10.2139/ssrn.3342202. This article has 3 citations.
+
+2. (ehrhardt2005disentangling pages 5-8): Michael C Ehrhardt, Michael C Ehrhardt, T. Philip Rubin, and T. Philip Rubin. Disentangling voting premia and liquidity for stocks with multiple share classes. Applied Financial Economics, Nov 2005. URL: https://doi.org/10.1080/09603100500163527, doi:10.1080/09603100500163527. This article has 4 citations.
+
+3. (kind2017marketfor pages 20-22): Axel H Kind and Oliver Poltera. The value of corporate voting rights embedded in option prices. Journal of Corporate Finance, Feb 2017. URL: https://doi.org/10.1016/j.jcorpfin.2016.12.004, doi:10.1016/j.jcorpfin.2016.12.004. This article has 44 citations.
+'''
+        
+        citations = client._extract_citations_from_text(formatted_answer)
+        
+        # Should extract all 3 unique citations
+        assert len(citations) == 3
+        
+        # Check first citation (Broussard)
+        broussard = next((c for c in citations if 'Broussard' in ' '.join(c.authors)), None)
+        assert broussard is not None
+        assert 'Time-variation of dual-class premia' in broussard.title
+        assert broussard.doi == '10.2139/ssrn.3342202'
+        assert broussard.year == 2019
+        
+        # Check second citation (Ehrhardt)
+        ehrhardt = next((c for c in citations if 'Ehrhardt' in ' '.join(c.authors)), None)
+        assert ehrhardt is not None
+        assert 'Disentangling voting premia' in ehrhardt.title
+        assert ehrhardt.doi == '10.1080/09603100500163527'
+        assert ehrhardt.year == 2005
+        
+        # Check third citation (Kind)
+        kind = next((c for c in citations if 'Kind' in ' '.join(c.authors)), None)
+        assert kind is not None
+        assert 'value of corporate voting rights' in kind.title
+        assert kind.doi == '10.1016/j.jcorpfin.2016.12.004'
+        assert kind.year == 2017
+    
+    @pytest.mark.unit
+    @patch.dict('os.environ', {'EDISON_API_KEY': ''}, clear=True)
+    def test_deduplicate_citations_by_doi(self):
+        """Should deduplicate citations with same DOI but different page ranges."""
+        client = EdisonClient(api_key=None)
+        
+        # Same paper referenced multiple times with different page ranges
+        formatted_answer = '''
+References
+
+1. (broussard2019timevariationofdualclass pages 10-12): John Paul Broussard and Mika Vaihekoski. Time-variation of dual-class premia. Capital Markets: Asset Pricing & Valuation eJournal, Feb 2019. URL: https://doi.org/10.2139/ssrn.3342202, doi:10.2139/ssrn.3342202.
+
+2. (broussard2019timevariationofdualclass pages 5-7): John Paul Broussard and Mika Vaihekoski. Time-variation of dual-class premia. Capital Markets: Asset Pricing & Valuation eJournal, Feb 2019. URL: https://doi.org/10.2139/ssrn.3342202, doi:10.2139/ssrn.3342202.
+
+3. (broussard2019timevariationofdualclass pages 15-18): John Paul Broussard and Mika Vaihekoski. Time-variation of dual-class premia. Capital Markets: Asset Pricing & Valuation eJournal, Feb 2019. URL: https://doi.org/10.2139/ssrn.3342202, doi:10.2139/ssrn.3342202.
+'''
+        
+        citations = client._extract_citations_from_text(formatted_answer)
+        
+        # Should only have 1 citation after deduplication
+        assert len(citations) == 1
+        assert citations[0].doi == '10.2139/ssrn.3342202'
+    
+    @pytest.mark.unit
+    @patch.dict('os.environ', {'EDISON_API_KEY': ''}, clear=True)
+    def test_strip_trailing_citation_count_metadata(self):
+        """Should strip 'This article has N citations.' from title."""
+        client = EdisonClient(api_key=None)
+        
+        formatted_answer = '''
+References
+
+1. (key pages 1-2): Test Author. Test Paper Title. Test Journal, 2023. doi:10.1000/test. This article has 42 citations.
+'''
+        
+        citations = client._extract_citations_from_text(formatted_answer)
+        
+        assert len(citations) == 1
+        # Title should not contain the citation count metadata
+        assert 'This article has' not in citations[0].title
+        assert '42 citations' not in citations[0].title
+    
+    @pytest.mark.unit
+    @patch.dict('os.environ', {'EDISON_API_KEY': ''}, clear=True)
+    def test_extract_url_from_edison_format(self):
+        """Should extract URL from 'URL: https://...' format."""
+        client = EdisonClient(api_key=None)
+        
+        formatted_answer = '''
+References
+
+1. (key pages 1-2): Test Author. Test Paper Title. Test Journal, 2023. URL: https://doi.org/10.1000/test, doi:10.1000/test.
+'''
+        
+        citations = client._extract_citations_from_text(formatted_answer)
+        
+        assert len(citations) == 1
+        assert citations[0].url == 'https://doi.org/10.1000/test'
+
+
 class TestCitationModel:
     """Tests for Citation dataclass."""
     
