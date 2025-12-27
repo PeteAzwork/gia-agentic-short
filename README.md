@@ -182,8 +182,15 @@ Common local runners live in `scripts/`:
 | `run_writing_review_stage.py <project_folder>` | Writing and referee review stage |
 | `run_paper_assembly.py <project_folder>` | Assemble LaTeX paper sections |
 | `run_paper_compile.py <project_folder>` | Compile LaTeX to PDF |
-| `run_*_gate.py <project_folder>` | Run individual gates |
+| `run_analysis_gate.py <project_folder>` | Run analysis gate checks |
+| `run_citation_accuracy_gate.py <project_folder>` | Run citation accuracy gate checks |
+| `run_citation_gate.py <project_folder>` | Run citation presence and formatting gate |
+| `run_claim_evidence_gate.py <project_folder>` | Run claim versus evidence consistency gate |
+| `run_literature_gate.py <project_folder>` | Run literature coverage gate |
+| `run_evidence_from_cache.py <project_folder>` | Rebuild evidence outputs from cached workflow stages |
+| `run_source_acquisition.py <project_folder>` | Acquire and register new sources for a project |
 | `run_evaluation_suite.py` | Run evaluation suite |
+| `watch_phase2_then_run_phase3.py <project_folder>` | Watch Phase 2 outputs then trigger Phase 3 gap resolution |
 | `research_intake_server.py` | Local intake server for creating project folders |
 
 ## Configuration
