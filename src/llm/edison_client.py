@@ -373,11 +373,19 @@ class EdisonClient:
             processing_time = time.time() - start_time
             logger.info(f"Edison search completed in {processing_time:.1f}s (hash={query_hash[:8]})")
             
-            # Parse response
-            answer = getattr(task_response, 'answer', str(task_response))
+            # Edison returns a LIST of PQATaskResponse objects; extract the first one
+            actual_response = task_response
+            if isinstance(task_response, list) and len(task_response) > 0:
+                actual_response = task_response[0]
+                logger.debug(f"Extracted first response from list of {len(task_response)}")
+            
+            # Parse response - prefer formatted_answer (includes References), fall back to answer
+            answer = getattr(actual_response, 'formatted_answer', None)
+            if not answer:
+                answer = getattr(actual_response, 'answer', str(actual_response))
             
             # Extract citations if available
-            citations = self._parse_citations(task_response)
+            citations = self._parse_citations(actual_response)
             
             return LiteratureResult(
                 query=query,
@@ -448,8 +456,17 @@ class EdisonClient:
             processing_time = time.time() - start_time
             logger.info(f"Edison search completed in {processing_time:.1f}s")
             
-            answer = getattr(task_response, 'answer', str(task_response))
-            citations = self._parse_citations(task_response)
+            # Edison returns a LIST of PQATaskResponse objects; extract the first one
+            actual_response = task_response
+            if isinstance(task_response, list) and len(task_response) > 0:
+                actual_response = task_response[0]
+                logger.debug(f"Extracted first response from list of {len(task_response)}")
+            
+            # Parse response - prefer formatted_answer (includes References), fall back to answer
+            answer = getattr(actual_response, 'formatted_answer', None)
+            if not answer:
+                answer = getattr(actual_response, 'answer', str(actual_response))
+            citations = self._parse_citations(actual_response)
             
             return LiteratureResult(
                 query=query,

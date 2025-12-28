@@ -371,3 +371,76 @@ class TestLiteratureResult:
         assert result.query == "test query"
         assert len(result.citations) == 1
         assert result.status == JobStatus.COMPLETED
+
+
+class TestEdisonListResponse:
+    """Tests for Edison API returning list of PQATaskResponse objects."""
+    
+    @pytest.mark.unit
+    @patch.dict('os.environ', {'EDISON_API_KEY': 'test-key'}, clear=True)
+    @patch('src.llm.edison_client.OfficialEdisonClient')
+    @pytest.mark.asyncio
+    async def test_handles_list_response(self, mock_official_client):
+        """Edison returns a LIST of PQATaskResponse - should extract first element."""
+        from unittest.mock import AsyncMock
+        
+        # Create a mock PQATaskResponse
+        @dataclass
+        class MockPQATaskResponse:
+            answer: str = "Short answer"
+            formatted_answer: str = '''Question: Test?
+
+The literature shows evidence.
+
+References
+
+1. (test2023paper pages 1-3): Test Author. Test Paper Title. Test Journal, 2023. doi:10.1000/test2023
+'''
+            status: str = "success"
+            id: str = "test-job-id"
+        
+        # Edison returns a LIST, not a single object
+        mock_response_list = [MockPQATaskResponse()]
+        
+        # Setup the mock client
+        mock_client_instance = AsyncMock()
+        mock_client_instance.arun_tasks_until_done = AsyncMock(return_value=mock_response_list)
+        mock_official_client.return_value = mock_client_instance
+        
+        client = EdisonClient()
+        result = await client.search_literature("test query")
+        
+        # Should successfully extract the response and citations
+        assert result.status == JobStatus.COMPLETED
+        assert "The literature shows evidence" in result.response
+        assert len(result.citations) >= 1
+        assert any('Test Paper Title' in c.title for c in result.citations)
+    
+    @pytest.mark.unit
+    @patch.dict('os.environ', {'EDISON_API_KEY': 'test-key'}, clear=True)
+    @patch('src.llm.edison_client.OfficialEdisonClient')
+    def test_handles_list_response_sync(self, mock_official_client):
+        """Sync version should also handle list response from Edison."""
+        from unittest.mock import MagicMock
+        
+        @dataclass
+        class MockPQATaskResponse:
+            answer: str = "Short answer"
+            formatted_answer: str = '''References
+
+1. (sync2024test pages 5-7): Sync Author. Sync Test Paper. Sync Journal, 2024. doi:10.2000/sync
+'''
+            status: str = "success"
+            id: str = "sync-job-id"
+        
+        mock_response_list = [MockPQATaskResponse()]
+        
+        mock_client_instance = MagicMock()
+        mock_client_instance.run_tasks_until_done = MagicMock(return_value=mock_response_list)
+        mock_official_client.return_value = mock_client_instance
+        
+        client = EdisonClient()
+        result = client.search_literature_sync("test query")
+        
+        assert result.status == JobStatus.COMPLETED
+        assert len(result.citations) >= 1
