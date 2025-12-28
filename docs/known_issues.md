@@ -85,9 +85,71 @@ Edison's `arun_tasks_until_done` returns a **LIST** of `PQATaskResponse` objects
 - Actions include: `add_bibtex_entry`, `align_hypothesis_text`, `verify_statistic_value`, etc.
 - Marked as "manual_review_required" for critical/high severity issues
 
+### 7. Hypothesis Developer Parsing Fails for LLM Output Format (FIXED)
+
+**Status:** Fixed  
+**Severity:** Critical  
+**Error:** `Literature search failed: No hypothesis or literature questions provided`  
+**Location:** `src/agents/hypothesis_developer.py` `_parse_hypothesis()` method  
+**Root Cause:** The regex patterns in `_parse_hypothesis()` did not match the actual LLM output format:
+
+**Expected format (by regex):**
+```markdown
+**H1:** The hypothesis statement here
+**Question 1:** What is the literature question?
+```
+
+**Actual LLM output format:**
+```markdown
+### **H1: Liquidity-Adjusted Voting Premium Hypothesis**
+> **The observed GOOG price premium reflects...**
+
+**1. Theoretical Foundation: Voting Rights and Derivatives**
+> "What theoretical mechanisms link corporate voting rights..."
+```
+
+**Fix:** Updated `_parse_hypothesis()` method to handle multiple formats:
+- Added fallback regex patterns for header + blockquote format (`### **H1: Title**\n> statement`)
+- Added parsing for numbered literature questions (`**N. Topic**\n> "question"`)
+- Added section-based extraction for Literature Questions section
+- Added debug logging for parsed data
+- Added unit test `test_hypothesis_parse_blockquote_format` to prevent regression
+
+### 8. Literature Synthesis NoneType Subscript Error
+
+**Status:** Open  
+**Severity:** High  
+**Error:** `'NoneType' object is not subscriptable`  
+**Location:** `src/agents/literature_synthesis.py` line 287 (caught in exception handler)  
+**Root Cause:** When literature search returns `success=False` with no citations_data, downstream code attempts to subscript `None` values  
+**Trigger:** Issue #7 cascades to this; empty hypothesis causes empty search which causes synthesis to fail  
+**Impact:** Literature synthesis produces no output, workflow marked as failed  
+**Suggested Fix:** Add defensive null checks before subscripting potentially None values in synthesis flow
+
 ## Workflow Statistics
 
-Last run (2025-12-28):
+Last run (2025-12-28 23:31 - 23:49):
+- **Research Workflow:** 482.49s, 49,495 tokens, 0 errors
+  - DataAnalyst: 36.26s, 3,632 tokens
+  - ResearchExplorer: 104.80s, 8,374 tokens  
+  - GapAnalyst: 109.85s, 13,840 tokens
+  - OverviewGenerator: 208.76s, 23,649 tokens
+  - Consistency Check: 19 issues (10 critical)
+  - Readiness: 1.5% complete
+- **Literature Workflow:** 581.4s, 59,756 tokens, success=False
+  - HypothesisDeveloper: 96.50s, 4,483 tokens (parsing failed)
+  - LiteratureSearch: skipped (no hypothesis)
+  - LiteratureSynthesis: 91.22s, 8,861 tokens (error)
+  - PaperStructurer: 228.14s, 23,478 tokens
+  - ProjectPlanner: 156.71s, 31,795 tokens
+  - Consistency Check: 41 issues (22 critical)
+  - Readiness: 8.2% complete
+- **Gap Resolution Workflow:** Not executed (Literature failed)
+- **Total time:** ~18 minutes
+- **Total tokens:** ~109,251
+- **Final status:** Failed (Literature workflow errors #7, #8)
+
+Previous successful run (2025-12-28):
 - **Research Workflow:** 453.57s, 44,296 tokens, 0 errors
 - **Literature Workflow:** 640.1s, 80,070 tokens, success=True (with fallbacks)
 - **Gap Resolution Workflow:** 1,482.93s, 1,047,409 tokens, 9/12 gaps resolved

@@ -246,15 +246,42 @@ Focus on what can actually be tested with the available data and methodology."""
             "literature_questions": [],
         }
         
-        # Extract H1 (main hypothesis) - handles **H1 (Title):** format
+        # Extract H1 (main hypothesis) - handles multiple formats:
+        # Format 1: **H1:** statement
+        # Format 2: ### **H1: Title**\n> **statement**
+        # Format 3: **H1 (Title):** statement
         h1_match = re.search(r'\*\*H1[^:]*:\*\*\s*(.+?)(?=\n\n|\n\*\*|$)', response, re.DOTALL)
         if h1_match:
             data["main_hypothesis"] = h1_match.group(1).strip()
         
-        # Extract H0 (null hypothesis)
+        # Try format with header + blockquote if first pattern didn't match
+        if not data["main_hypothesis"]:
+            # Match ### **H1: Title**\n...\n> **statement** or > statement
+            h1_header_match = re.search(
+                r'###?\s*\*\*H1[^*]+\*\*.*?(?:^|\n)>\s*\*?\*?(.+?)(?=\n\n|\n###|\n\*\*[^>]|$)',
+                response, re.DOTALL | re.MULTILINE
+            )
+            if h1_header_match:
+                hypothesis_text = h1_header_match.group(1).strip()
+                # Clean up any trailing asterisks from bold formatting
+                hypothesis_text = re.sub(r'\*+$', '', hypothesis_text).strip()
+                data["main_hypothesis"] = hypothesis_text
+        
+        # Extract H0 (null hypothesis) - handles multiple formats
         h0_match = re.search(r'\*\*H0[^:]*:\*\*\s*(.+?)(?=\n\n|\n\*\*|$)', response, re.DOTALL)
         if h0_match:
             data["null_hypothesis"] = h0_match.group(1).strip()
+        
+        # Try blockquote format for H0
+        if not data["null_hypothesis"]:
+            h0_header_match = re.search(
+                r'###?\s*\*\*H0[^*]+\*\*.*?(?:^|\n)>\s*\*?\*?(.+?)(?=\n\n|\n###|\n\*\*[^>]|$)',
+                response, re.DOTALL | re.MULTILINE
+            )
+            if h0_header_match:
+                null_text = h0_header_match.group(1).strip()
+                null_text = re.sub(r'\*+$', '', null_text).strip()
+                data["null_hypothesis"] = null_text
         
         # Extract alternative hypotheses (H2, H3, H4, H5, etc.)
         alt_matches = re.findall(r'\*\*H([2-9])[^:]*:\*\*\s*(.+?)(?=\n\n|\n\*\*H|\n---|\n###|$)', response, re.DOTALL)
@@ -263,24 +290,47 @@ Focus on what can actually be tested with the available data and methodology."""
             if alt and len(alt) > 10:  # Filter out very short matches
                 data["alternative_hypotheses"].append(alt)
         
+        # Also try blockquote format for alternatives
+        alt_header_matches = re.findall(
+            r'###?\s*\*\*H([2-9])[^*]+\*\*.*?(?:^|\n)>\s*\*?\*?(.+?)(?=\n\n|\n###|\n\*\*H|$)',
+            response, re.DOTALL | re.MULTILINE
+        )
+        for _, content in alt_header_matches:
+            alt_text = content.strip()
+            alt_text = re.sub(r'\*+$', '', alt_text).strip()
+            if alt_text and len(alt_text) > 10 and alt_text not in data["alternative_hypotheses"]:
+                data["alternative_hypotheses"].append(alt_text)
+        
         # Extract testable predictions from tables or lists
         pred_section = re.search(r'Testable Predictions.*?(?=\n\n\*\*|\n---|\n###|$)', response, re.DOTALL | re.IGNORECASE)
         if pred_section:
             pred_text = pred_section.group(0)
-            # Try to get P1.x predictions
-            p_matches = re.findall(r'P\d+\.\d+[:\s]+(.+?)(?=\||\n)', pred_text)
+            # Try to get P1.x or Prediction N.x predictions
+            p_matches = re.findall(r'(?:P|Prediction\s*)\d+\.\d+[:\s]+(.+?)(?=\||\n)', pred_text, re.IGNORECASE)
             data["testable_predictions"].extend([p.strip() for p in p_matches if p.strip()])
         
-        # Extract literature questions - handles **Question N:** format
+        # Extract literature questions - handles multiple formats:
+        # Format 1: **Question N:** question
+        # Format 2: **N. Topic**\n> "question"
         question_matches = re.findall(
             r'\*\*Question\s*(\d+)[^:]*:\*?\*?\s*(.+?)(?=\n\n\*\*Question|\n---|\n###|$)',
             response, re.DOTALL | re.IGNORECASE
         )
         for _, content in question_matches:
-            # Get the first line (the actual question) before *Purpose* etc.
             question_line = content.split('\n')[0].strip()
             if question_line:
                 data["literature_questions"].append(question_line)
+        
+        # Try numbered format with blockquote: **N. Topic**\n> "question"
+        if not data["literature_questions"]:
+            numbered_q_matches = re.findall(
+                r'\*\*(\d+)\.[^*]+\*\*.*?(?:^|\n)>\s*"?([^"\n>]+)"?',
+                response, re.DOTALL | re.MULTILINE
+            )
+            for _, question in numbered_q_matches:
+                question = question.strip()
+                if question and len(question) > 10:
+                    data["literature_questions"].append(question)
         
         # Also capture any search terms or key papers mentioned
         search_needed = re.findall(r'\[SEARCH_NEEDED:\s*"([^"]+)"\]', response)
@@ -288,4 +338,21 @@ Focus on what can actually be tested with the available data and methodology."""
             if term not in data["literature_questions"]:
                 data["literature_questions"].append(term)
         
+        # If still no literature questions, try to extract from "Literature Questions" section
+        if not data["literature_questions"]:
+            lit_section = re.search(
+                r'(?:Literature Questions|Questions to Search).*?(?=\n##|\n---|\Z)',
+                response, re.DOTALL | re.IGNORECASE
+            )
+            if lit_section:
+                section_text = lit_section.group(0)
+                # Find all blockquotes in this section
+                blockquote_questions = re.findall(r'>\s*"?([^"\n>]+)"?', section_text)
+                for q in blockquote_questions:
+                    q = q.strip()
+                    if q and len(q) > 20 and '?' in q:  # Must be a real question
+                        data["literature_questions"].append(q)
+        
+        logger.debug(f"Parsed hypothesis data: main={data['main_hypothesis'][:50] if data['main_hypothesis'] else None}... "
+                    f"questions={len(data['literature_questions'])}")        
         return data

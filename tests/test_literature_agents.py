@@ -91,6 +91,66 @@ Testable Predictions:
         assert "volume" in parsed["main_hypothesis"].lower() or "spread" in parsed["main_hypothesis"].lower()
         assert len(parsed["testable_predictions"]) >= 0
         assert len(parsed["literature_questions"]) >= 0
+    
+    @pytest.mark.unit
+    @patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'})
+    @patch('src.llm.claude_client.anthropic.Anthropic')
+    @patch('src.llm.claude_client.anthropic.AsyncAnthropic')
+    def test_hypothesis_parse_blockquote_format(self, mock_async_anthropic, mock_anthropic):
+        """HypothesisDevelopmentAgent should parse blockquote hypothesis format."""
+        from src.agents.hypothesis_developer import HypothesisDevelopmentAgent
+        
+        agent = HypothesisDevelopmentAgent()
+        
+        # This format is what the LLM actually produces (Issue #7)
+        test_response = """# Hypothesis Analysis
+
+## Main Hypothesis
+
+### **H1: Liquidity-Adjusted Voting Premium Hypothesis**
+
+> **The observed GOOG price premium reflects superior market quality characteristics and institutional demand for governance-neutral exposure.**
+
+### Economic Intuition
+
+The counter-intuitive GOOG premium is not evidence against voting rights value.
+
+## Alternative Hypotheses
+
+### **H0 (Null Hypothesis): No Voting Premium in Options**
+
+> **Voting rights have no discernible effect on options pricing. The GOOG premium reflects market microstructure features unrelated to governance.**
+
+### **H2 (Institutional Clientele Hypothesis)**
+
+> **The GOOG premium reflects systematic institutional preference for non-voting exposure that dominates any theoretical voting premium.**
+
+## Literature Questions
+
+### Questions to Search in Academic Literature
+
+**1. Theoretical Foundation: Voting Rights and Derivatives**
+> "What theoretical mechanisms link corporate voting rights to derivative security pricing?"
+
+**2. Empirical Benchmark: Voting Premium Magnitudes**
+> "What is the empirically established range of voting premiums in equity markets?"
+
+**3. Prior Work on GOOG/GOOGL**
+> "Has any academic study examined the GOOG/GOOGL price differential?"
+"""
+        
+        parsed = agent._parse_hypothesis(test_response)
+        
+        assert parsed["main_hypothesis"] is not None, "main_hypothesis should be parsed"
+        assert "GOOG" in parsed["main_hypothesis"] or "premium" in parsed["main_hypothesis"].lower()
+        
+        assert parsed["null_hypothesis"] is not None, "null_hypothesis should be parsed"
+        assert "voting" in parsed["null_hypothesis"].lower()
+        
+        assert len(parsed["alternative_hypotheses"]) >= 1, "Should have at least one alternative"
+        
+        assert len(parsed["literature_questions"]) >= 2, f"Should have literature questions, got {len(parsed['literature_questions'])}"
+        assert any("voting" in q.lower() or "derivative" in q.lower() for q in parsed["literature_questions"])
 
 
 class TestLiteratureSearchAgent:
