@@ -115,16 +115,15 @@ Edison's `arun_tasks_until_done` returns a **LIST** of `PQATaskResponse` objects
 - Added debug logging for parsed data
 - Added unit test `test_hypothesis_parse_blockquote_format` to prevent regression
 
-### 8. Literature Synthesis NoneType Subscript Error
+### 8. Literature Synthesis NoneType Subscript Error (FIXED)
 
-**Status:** Open  
+**Status:** Fixed  
 **Severity:** High  
 **Error:** `'NoneType' object is not subscriptable`  
-**Location:** `src/agents/literature_synthesis.py` line 287 (caught in exception handler)  
-**Root Cause:** When literature search returns `success=False` with no citations_data, downstream code attempts to subscript `None` values  
-**Trigger:** Issue #7 cascades to this; empty hypothesis causes empty search which causes synthesis to fail  
-**Impact:** Literature synthesis produces no output, workflow marked as failed  
-**Suggested Fix:** Add defensive null checks before subscripting potentially None values in synthesis flow
+**Location:** `src/agents/literature_synthesis.py` `_format_literature_review()` method, line 416  
+**Root Cause:** The `hypothesis` parameter was `None` when the hypothesis couldn't be parsed from HypothesisDeveloper output  
+**Trigger:** Issue #7 cascading: empty hypothesis causes downstream code to pass `None` to `_format_literature_review()`  
+**Fix:** Added defensive null handling: `hypothesis_text = (hypothesis or "Not specified")[:100]`
 
 ## Workflow Statistics
 

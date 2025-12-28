@@ -284,7 +284,8 @@ class LiteratureSynthesisAgent(BaseAgent):
             )
             
         except Exception as e:
-            logger.error(f"Literature synthesis error: {e}")
+            import traceback
+            logger.error(f"Literature synthesis error: {e}\n{traceback.format_exc()}")
             return AgentResult(
                 agent_name=self.name,
                 task_type=self.task_type,
@@ -408,11 +409,14 @@ Please create a comprehensive literature review summary that:
     ) -> str:
         """Format the complete literature review document."""
         
+        # Handle None hypothesis gracefully
+        hypothesis_text = (hypothesis or "Not specified")[:100]
+        
         header = f"""---
 title: Literature Review Summary
 generated: {datetime.now().strftime("%Y-%m-%d %H:%M")}
 papers_reviewed: {citations_count}
-hypothesis: "{hypothesis[:100]}..."
+hypothesis: "{hypothesis_text}..."
 author: Gia Tenica*
 ---
 
