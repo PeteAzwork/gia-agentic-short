@@ -249,17 +249,19 @@ Focus on what can actually be tested with the available data and methodology."""
         # Extract H1 (main hypothesis) - handles multiple formats:
         # Format 1: **H1:** statement
         # Format 2: ### **H1: Title**\n> **statement**
-        # Format 3: **H1 (Title):** statement
+        # Format 3: **H1 (Title):** statement  
+        # Format 4: **H1: Title**\n\n> statement
         h1_match = re.search(r'\*\*H1[^:]*:\*\*\s*(.+?)(?=\n\n|\n\*\*|$)', response, re.DOTALL)
         if h1_match:
             data["main_hypothesis"] = h1_match.group(1).strip()
         
         # Try format with header + blockquote if first pattern didn't match
         if not data["main_hypothesis"]:
-            # Match ### **H1: Title**\n...\n> **statement** or > statement
+            # Match **H1: Title**\n...\n> statement or ### **H1: Title**\n> statement
+            # Note: the ### is optional and there may be blank lines before the blockquote
             h1_header_match = re.search(
-                r'###?\s*\*\*H1[^*]+\*\*.*?(?:^|\n)>\s*\*?\*?(.+?)(?=\n\n|\n###|\n\*\*[^>]|$)',
-                response, re.DOTALL | re.MULTILINE
+                r'(?:###?\s*)?\*\*H1[^*]+\*\*\s*(?:\n+)>\s*(.+?)(?=\n\n\*\*|\n\n###|\n\n---|\Z)',
+                response, re.DOTALL
             )
             if h1_header_match:
                 hypothesis_text = h1_header_match.group(1).strip()
@@ -275,8 +277,8 @@ Focus on what can actually be tested with the available data and methodology."""
         # Try blockquote format for H0
         if not data["null_hypothesis"]:
             h0_header_match = re.search(
-                r'###?\s*\*\*H0[^*]+\*\*.*?(?:^|\n)>\s*\*?\*?(.+?)(?=\n\n|\n###|\n\*\*[^>]|$)',
-                response, re.DOTALL | re.MULTILINE
+                r'(?:###?\s*)?\*\*H0[^*]+\*\*\s*(?:\n+)>\s*(.+?)(?=\n\n\*|\n\n---|\n\n###|\Z)',
+                response, re.DOTALL
             )
             if h0_header_match:
                 null_text = h0_header_match.group(1).strip()
