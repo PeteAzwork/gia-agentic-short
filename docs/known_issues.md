@@ -149,6 +149,58 @@ Edison's `arun_tasks_until_done` returns a **LIST** of `PQATaskResponse` objects
 - Cache is used only for first iteration; retries always re-execute
 - Previous run: 8/12 (66.7%) would now succeed (above 50% threshold)
 
+**Verified:** Pipeline run 2025-12-29 confirmed iterations working correctly:
+- Iter 1: 5/10 resolved (50% threshold met, continued)
+- Iter 2: 10/22 resolved (continued with remaining)
+- Iter 3: 17/32 resolved (53.1% >= 50% threshold, success)
+
+### 10. Gap List JSON Parsing Falls Back Frequently
+
+**Status:** Open (non-blocking)  
+**Severity:** Low  
+**Warning:** `Could not parse gap list, attempting line-by-line`  
+**Location:** `src/agents/gap_resolver.py` `_identify_gaps()` method  
+**Frequency:** Occurred in all 3 iterations during 2025-12-29 run  
+**Root Cause:** Claude returns gap list in markdown/line format rather than JSON array  
+**Impact:** Minor; line-by-line fallback successfully parses the gaps  
+**Recommendation:** Update prompt to explicitly request JSON format or improve fallback robustness
+
+### 11. Semantic Scholar Persistent Rate Limiting
+
+**Status:** Open (non-blocking)  
+**Severity:** Medium  
+**Error:** `Semantic Scholar rate limit hit, backing off...` (3 retries failed)  
+**Location:** `src/llm/semantic_scholar_client.py`  
+**Observation:** Even with exponential backoff, Semantic Scholar API returns 429 for all retries  
+**Fallback:** OpenAlex successfully used as alternative (returned 9 papers from 2 queries)  
+**Impact:** Literature search still works via fallback providers  
+**Recommendation:** Consider adding Semantic Scholar API key for higher rate limits
+
+### 12. Query Decomposition JSON Parse Error
+
+**Status:** Open (non-blocking)  
+**Severity:** Low  
+**Error:** `Failed to parse query decomposition response: Unterminated string starting at: line 174 column 26`  
+**Location:** `src/llm/claude_literature_search.py` `_decompose_queries()` method  
+**Recovery:** Successfully generated 4 aspect queries despite parse error  
+**Root Cause:** LLM output contained truncated or malformed JSON  
+**Impact:** None; fallback extraction worked correctly
+
+### 13. Full Pipeline Reports Success: False Despite Successful Completion (FIXED)
+
+**Status:** Fixed  
+**Severity:** Medium  
+**Issue:** Pipeline output shows `Success: False` even though all workflows completed and gap resolution met threshold  
+**Location:** `src/pipeline/context.py` `record_phase_result()` method  
+**Observation:** 2025-12-29 run completed successfully with:
+  - Research Workflow: success=True (550s, 54,736 tokens)
+  - Literature Workflow: success=True (699s, 105,182 tokens)  
+  - Gap Resolution: 17/32 resolved (53.1% >= 50% threshold, lenient success)
+**Root Cause:** `WorkflowContext.record_phase_result()` set `success=False` when any phase had `success=False`, ignoring `lenient_success` flag  
+**Fix:** Updated `record_phase_result()` to check `lenient_success` as fallback:
+  - If phase has `success=False` but `lenient_success=True`, don't mark overall pipeline as failed
+  - This allows lenient mode phases to report partial success without failing the entire pipeline
+
 ## Workflow Statistics
 
 Last successful run (2025-12-29 00:11 - 01:03):

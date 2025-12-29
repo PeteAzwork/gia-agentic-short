@@ -68,11 +68,17 @@ class WorkflowContext:
                     self.degradations.append(item)
 
         phase_success = payload.get("success")
+        # For lenient mode phases (e.g., gap resolution), use lenient_success as fallback
         if phase_success is False:
-            self.success = False
-            phase_errors = payload.get("errors")
-            if isinstance(phase_errors, list):
-                self.errors.extend([str(e) for e in phase_errors])
+            lenient_success = payload.get("lenient_success", False)
+            if lenient_success:
+                # Phase succeeded via lenient mode; don't mark overall pipeline as failed
+                pass
+            else:
+                self.success = False
+                phase_errors = payload.get("errors")
+                if isinstance(phase_errors, list):
+                    self.errors.extend([str(e) for e in phase_errors])
 
     def to_payload(self) -> Dict[str, Any]:
         return {
