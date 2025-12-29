@@ -96,6 +96,14 @@ class GapResolutionConfig:
     # Only applies when LENIENT_MODE is True
     MIN_RESOLVED_RATIO: float = float(os.getenv("GIA_GAP_MIN_RESOLVED_RATIO", "0.5"))
     
+    # Gap explosion control: max total gaps across all iterations
+    # Prevents unbounded gap growth when gap resolution identifies follow-up gaps
+    MAX_TOTAL_GAPS: int = int(os.getenv("GIA_GAP_MAX_TOTAL_GAPS", "50"))
+    
+    # Prioritize original gaps over follow-up gaps discovered during resolution
+    # When True, success ratio only considers gaps from iteration 1
+    PRIORITIZE_ORIGINAL_GAPS: bool = os.getenv("GIA_GAP_PRIORITIZE_ORIGINAL", "true").lower() == "true"
+    
     # Code execution settings per gap
     MAX_CODE_ATTEMPTS: int = int(os.getenv("GIA_GAP_MAX_CODE_ATTEMPTS", "2"))
     EXECUTION_TIMEOUT: int = int(os.getenv("GIA_GAP_EXECUTION_TIMEOUT", "120"))

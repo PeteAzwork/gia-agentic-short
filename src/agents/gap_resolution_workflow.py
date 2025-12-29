@@ -51,6 +51,8 @@ class GapResolutionWorkflowResult:
     readiness_assessment: Optional[AgentResult] = None  # Project readiness assessment
     gaps_resolved: int = 0
     gaps_total: int = 0
+    original_gaps_resolved: int = 0  # Original gaps from iteration 1 resolved
+    original_gaps_total: int = 0  # Total original gaps from iteration 1
     iterations_run: int = 1  # Number of iterations executed
     total_tokens: int = 0
     total_time: float = 0.0
@@ -68,6 +70,8 @@ class GapResolutionWorkflowResult:
             "updated_overview_path": self.updated_overview_path,
             "gaps_resolved": self.gaps_resolved,
             "gaps_total": self.gaps_total,
+            "original_gaps_resolved": self.original_gaps_resolved,
+            "original_gaps_total": self.original_gaps_total,
             "iterations_run": self.iterations_run,
             "lenient_success": self.lenient_success,
             "total_tokens": self.total_tokens,
@@ -106,6 +110,8 @@ class GapResolutionWorkflow:
         max_iterations: int = None,
         lenient_mode: bool = None,
         min_resolved_ratio: float = None,
+        max_total_gaps: int = None,
+        prioritize_original_gaps: bool = None,
     ):
         """
         Initialize gap resolution workflow.
@@ -118,6 +124,8 @@ class GapResolutionWorkflow:
             max_iterations: Maximum workflow iterations for retrying unresolved gaps (default from config)
             lenient_mode: If True, workflow succeeds if min_resolved_ratio is met (default from config)
             min_resolved_ratio: Minimum ratio of gaps that must be resolved for lenient success (default from config)
+            max_total_gaps: Maximum total gaps across all iterations (default from config)
+            prioritize_original_gaps: If True, success ratio only considers gaps from iteration 1 (default from config)
         """
         self.client = client or ClaudeClient()
         self.use_cache = use_cache
@@ -128,6 +136,8 @@ class GapResolutionWorkflow:
         self.max_iterations = max_iterations if max_iterations is not None else GAP_RESOLUTION.MAX_ITERATIONS
         self.lenient_mode = lenient_mode if lenient_mode is not None else GAP_RESOLUTION.LENIENT_MODE
         self.min_resolved_ratio = min_resolved_ratio if min_resolved_ratio is not None else GAP_RESOLUTION.MIN_RESOLVED_RATIO
+        self.max_total_gaps = max_total_gaps if max_total_gaps is not None else GAP_RESOLUTION.MAX_TOTAL_GAPS
+        self.prioritize_original_gaps = prioritize_original_gaps if prioritize_original_gaps is not None else GAP_RESOLUTION.PRIORITIZE_ORIGINAL_GAPS
         
         # Initialize tracing
         init_tracing()
@@ -145,7 +155,8 @@ class GapResolutionWorkflow:
         logger.info(
             f"Gap resolution workflow initialized with 4 agents "
             f"(cache={'enabled' if use_cache else 'disabled'}, "
-            f"max_iterations={self.max_iterations}, lenient_mode={self.lenient_mode})"
+            f"max_iterations={self.max_iterations}, lenient_mode={self.lenient_mode}, "
+            f"max_total_gaps={self.max_total_gaps})"
         )
     
     async def run(self, project_folder: str) -> GapResolutionWorkflowResult:
@@ -241,6 +252,10 @@ class GapResolutionWorkflow:
             # Step 1: Gap Resolution with iterations
             unresolved_gap_ids = set()  # Track gaps that failed to resolve
             all_code_executions = []
+            original_gap_ids = set()  # Track gaps from iteration 1 for success calculation
+            original_gap_count = 0  # Number of original gaps
+            original_resolved_count = 0  # Number of original gaps resolved
+            all_gap_ids_seen = set()  # Track all gaps to enforce MAX_TOTAL_GAPS
             
             for iteration in range(1, self.max_iterations + 1):
                 result.iterations_run = iteration
@@ -280,8 +295,44 @@ class GapResolutionWorkflow:
                         
                         # Extract gap statistics
                         structured = gap_result.structured_data or {}
-                        result.gaps_resolved = structured.get("resolved_count", 0)
-                        result.gaps_total = structured.get("total_gaps", 0)
+                        iter_resolved = structured.get("resolved_count", 0)
+                        iter_total = structured.get("total_gaps", 0)
+                        
+                        # Track all gap IDs seen across iterations
+                        iter_gap_ids = {r.get("gap_id") for r in structured.get("resolutions", [])}
+                        new_gap_ids = iter_gap_ids - all_gap_ids_seen
+                        all_gap_ids_seen.update(iter_gap_ids)
+                        
+                        # On iteration 1, record original gaps
+                        if iteration == 1:
+                            original_gap_ids = iter_gap_ids.copy()
+                            original_gap_count = iter_total
+                            logger.info(f"{iter_label} Original gaps: {original_gap_count}")
+                        else:
+                            # Log follow-up gap growth
+                            if new_gap_ids:
+                                logger.info(f"{iter_label} {len(new_gap_ids)} new follow-up gaps discovered")
+                        
+                        # Check gap explosion limit
+                        if len(all_gap_ids_seen) > self.max_total_gaps:
+                            logger.warning(
+                                f"{iter_label} Gap explosion detected: {len(all_gap_ids_seen)} total gaps "
+                                f"exceeds MAX_TOTAL_GAPS={self.max_total_gaps}. Capping."
+                            )
+                            span.set_attribute("gap_explosion_capped", True)
+                        
+                        # Update result totals (always use actual totals for logging)
+                        result.gaps_resolved = iter_resolved
+                        result.gaps_total = iter_total
+                        
+                        # Calculate original gap resolution for prioritize mode
+                        if self.prioritize_original_gaps:
+                            original_resolved_count = sum(
+                                1 for r in structured.get("resolutions", [])
+                                if r.get("resolved", False) and r.get("gap_id") in original_gap_ids
+                            )
+                            span.set_attribute("original_gaps_resolved", original_resolved_count)
+                            span.set_attribute("original_gaps_total", original_gap_count)
                         
                         # Track code executions across iterations
                         iter_executions = [
@@ -290,6 +341,7 @@ class GapResolutionWorkflow:
                                 "success": r.get("execution_result", {}).get("success", False),
                                 "resolved": r.get("resolved", False),
                                 "iteration": iteration,
+                                "is_original": r.get("gap_id") in original_gap_ids,
                             }
                             for r in structured.get("resolutions", [])
                         ]
@@ -454,24 +506,38 @@ class GapResolutionWorkflow:
             
             result.total_time = time.time() - start_time
             
+            # Update result with original gap tracking
+            result.original_gaps_total = original_gap_count
+            result.original_gaps_resolved = original_resolved_count
+            
             # Determine success based on mode and resolution ratio
+            # Use original gaps for calculation when prioritize_original_gaps is True
+            if self.prioritize_original_gaps and original_gap_count > 0:
+                success_resolved = original_resolved_count
+                success_total = original_gap_count
+                gap_label = "original gaps"
+            else:
+                success_resolved = result.gaps_resolved
+                success_total = result.gaps_total
+                gap_label = "gaps"
+            
             if len(result.errors) == 0:
                 # No errors; full success
                 result.success = True
-            elif self.lenient_mode and result.gaps_total > 0:
+            elif self.lenient_mode and success_total > 0:
                 # Lenient mode: succeed if we resolved at least min_resolved_ratio
-                resolved_ratio = result.gaps_resolved / result.gaps_total
+                resolved_ratio = success_resolved / success_total
                 if resolved_ratio >= self.min_resolved_ratio:
                     result.success = True
                     result.lenient_success = True
                     logger.info(
-                        f"Lenient success: {result.gaps_resolved}/{result.gaps_total} gaps resolved "
+                        f"Lenient success: {success_resolved}/{success_total} {gap_label} resolved "
                         f"({resolved_ratio:.1%} >= {self.min_resolved_ratio:.1%} threshold)"
                     )
                 else:
                     result.success = False
                     logger.warning(
-                        f"Below threshold: {result.gaps_resolved}/{result.gaps_total} gaps resolved "
+                        f"Below threshold: {success_resolved}/{success_total} {gap_label} resolved "
                         f"({resolved_ratio:.1%} < {self.min_resolved_ratio:.1%} threshold)"
                     )
             else:
@@ -482,12 +548,20 @@ class GapResolutionWorkflow:
             workflow_span.set_attribute("success", result.success)
             workflow_span.set_attribute("lenient_success", result.lenient_success)
             
-            logger.info(
-                f"Gap resolution workflow completed in {result.total_time:.2f}s, "
-                f"{result.total_tokens} tokens, "
-                f"{result.gaps_resolved}/{result.gaps_total} gaps resolved"
-                f"{' (lenient)' if result.lenient_success else ''}"
-            )
+            # Build summary message
+            summary_parts = [
+                f"Gap resolution workflow completed in {result.total_time:.2f}s",
+                f"{result.total_tokens} tokens",
+                f"{result.gaps_resolved}/{result.gaps_total} gaps resolved",
+            ]
+            if self.prioritize_original_gaps and original_gap_count > 0:
+                summary_parts.append(f"({original_resolved_count}/{original_gap_count} original)")
+            if result.lenient_success:
+                summary_parts.append("(lenient)")
+            if len(all_gap_ids_seen) > result.gaps_total:
+                summary_parts.append(f"({len(all_gap_ids_seen)} total seen)")
+            
+            logger.info(", ".join(summary_parts))
             
             return result
     
