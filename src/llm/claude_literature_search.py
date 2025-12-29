@@ -436,24 +436,61 @@ class ClaudeLiteratureSearch:
             max_tokens=2000,
         )
         
-        # Parse JSON response
+        # Parse JSON response with multiple fallback strategies
         aspect_queries: List[Dict[str, Any]] = []
+        parse_method = "none"
+        
+        text = content.strip()
+        
+        # Strategy 1: Direct JSON parse
         try:
-            # Try to extract JSON from response
-            text = content
-            if "```json" in text:
-                json_str = text.split("```json")[1].split("```")[0]
-            elif "```" in text:
-                json_str = text.split("```")[1].split("```")[0]
-            else:
-                json_str = text
-            
-            data = json.loads(json_str)
-            aspect_queries = data.get("aspect_queries", [])
-            
-        except (json.JSONDecodeError, IndexError) as e:
-            logger.warning(f"Failed to parse query decomposition response: {e}")
-            # Fallback: create queries from hypothesis
+            parsed = json.loads(text)
+            if isinstance(parsed, dict) and "aspect_queries" in parsed:
+                aspect_queries = parsed["aspect_queries"]
+                parse_method = "direct_dict"
+            elif isinstance(parsed, list):
+                aspect_queries = parsed
+                parse_method = "direct_list"
+        except json.JSONDecodeError:
+            pass
+        
+        # Strategy 2: Extract from code block
+        if not aspect_queries:
+            json_str = None
+            try:
+                if "```json" in text:
+                    json_str = text.split("```json")[1].split("```")[0].strip()
+                elif "```" in text:
+                    json_str = text.split("```")[1].split("```")[0].strip()
+                
+                if json_str:
+                    data = json.loads(json_str)
+                    if isinstance(data, dict) and "aspect_queries" in data:
+                        aspect_queries = data["aspect_queries"]
+                        parse_method = "code_block_dict"
+                    elif isinstance(data, list):
+                        aspect_queries = data
+                        parse_method = "code_block_list"
+            except json.JSONDecodeError as e:
+                # Check if truncation caused the error
+                if json_str and ("Unterminated" in str(e) or "Expecting" in str(e)):
+                    logger.warning(f"JSON appears truncated, attempting partial recovery: {e}")
+                    # Try to salvage partial JSON by finding complete objects
+                    import re
+                    for obj_match in re.finditer(r'\{[^{}]+\}', json_str):
+                        try:
+                            obj = json.loads(obj_match.group())
+                            if "aspect" in obj or "query" in obj:
+                                aspect_queries.append(obj)
+                                parse_method = "partial_recovery"
+                        except json.JSONDecodeError:
+                            continue
+            except (IndexError, AttributeError) as e:
+                logger.warning(f"Failed to extract JSON from code block: {e}")
+        
+        # Fallback: create queries from hypothesis if parsing failed
+        if not aspect_queries:
+            logger.info("Using fallback query generation from hypothesis")
             aspect_queries = [
                 {"aspect": "main", "query": hypothesis, "rationale": "Main hypothesis"},
             ]
@@ -463,6 +500,10 @@ class ClaudeLiteratureSearch:
                     "query": q,
                     "rationale": "Research question",
                 })
+            parse_method = "fallback"
+        
+        if parse_method not in ("fallback", "none"):
+            logger.debug(f"Parsed {len(aspect_queries)} aspect queries using method: {parse_method}")
         
         return aspect_queries, tokens_used
     
@@ -470,44 +511,19 @@ class ClaudeLiteratureSearch:
         self,
         aspect_queries: List[Dict[str, Any]],
     ) -> Tuple[List[Dict[str, Any]], List[str]]:
-        """Stage 2: Retrieve papers from multiple sources."""
+        """Stage 2: Retrieve papers from multiple sources.
+        
+        Source priority (OpenAlex first due to better rate limits):
+        1. OpenAlex - No API key required, generous rate limits
+        2. Semantic Scholar - Rate limited, often returns 429
+        """
         all_papers: Dict[str, Dict[str, Any]] = {}  # Keyed by title for deduplication
         sources_used: List[str] = []
         
         # Build combined query from aspects
         queries = [q.get("query", "") for q in aspect_queries if q.get("query")]
         
-        # Semantic Scholar search
-        try:
-            for query in queries[:3]:  # Limit to top 3 queries
-                result = await self.s2_client.search_papers(
-                    query=query,
-                    limit=self.config.max_papers_per_source // len(queries[:3]),
-                    year=self.config.year_range,
-                )
-                for paper in result.papers:
-                    key = paper.title.lower().strip()
-                    if key not in all_papers:
-                        all_papers[key] = {
-                            "paper_id": paper.paper_id,
-                            "title": paper.title,
-                            "authors": paper.authors,
-                            "year": paper.year,
-                            "venue": paper.venue,
-                            "abstract": paper.abstract,
-                            "doi": paper.doi,
-                            "url": paper.url,
-                            "citation_count": paper.citation_count,
-                            "is_open_access": paper.is_open_access,
-                            "pdf_url": paper.open_access_pdf_url,
-                            "source": "semantic_scholar",
-                        }
-            sources_used.append("semantic_scholar")
-            logger.debug(f"Semantic Scholar returned {len([p for p in all_papers.values() if p['source'] == 'semantic_scholar'])} papers")
-        except Exception as e:
-            logger.warning(f"Semantic Scholar search failed: {e}")
-        
-        # OpenAlex search
+        # OpenAlex search (FIRST - more reliable, no API key needed)
         try:
             for query in queries[:3]:
                 result = await self.openalex_client.search_works(
@@ -536,6 +552,37 @@ class ClaudeLiteratureSearch:
             logger.debug(f"OpenAlex returned {len([p for p in all_papers.values() if p['source'] == 'openalex'])} papers")
         except Exception as e:
             logger.warning(f"OpenAlex search failed: {e}")
+        
+        # Semantic Scholar search (SECOND - often rate limited without API key)
+        # Note: Set SEMANTIC_SCHOLAR_API_KEY env var for higher rate limits
+        try:
+            for query in queries[:3]:  # Limit to top 3 queries
+                result = await self.s2_client.search_papers(
+                    query=query,
+                    limit=self.config.max_papers_per_source // len(queries[:3]),
+                    year=self.config.year_range,
+                )
+                for paper in result.papers:
+                    key = paper.title.lower().strip()
+                    if key not in all_papers:
+                        all_papers[key] = {
+                            "paper_id": paper.paper_id,
+                            "title": paper.title,
+                            "authors": paper.authors,
+                            "year": paper.year,
+                            "venue": paper.venue,
+                            "abstract": paper.abstract,
+                            "doi": paper.doi,
+                            "url": paper.url,
+                            "citation_count": paper.citation_count,
+                            "is_open_access": paper.is_open_access,
+                            "pdf_url": paper.open_access_pdf_url,
+                            "source": "semantic_scholar",
+                        }
+            sources_used.append("semantic_scholar")
+            logger.debug(f"Semantic Scholar returned {len([p for p in all_papers.values() if p['source'] == 'semantic_scholar'])} papers")
+        except Exception as e:
+            logger.warning(f"Semantic Scholar search failed: {e}")
         
         # Sort by citation count (if available) to prioritize influential papers
         papers = list(all_papers.values())

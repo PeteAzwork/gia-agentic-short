@@ -256,6 +256,7 @@ class GapResolutionWorkflow:
             original_gap_count = 0  # Number of original gaps
             original_resolved_count = 0  # Number of original gaps resolved
             all_gap_ids_seen = set()  # Track all gaps to enforce MAX_TOTAL_GAPS
+            previous_gaps_list = []  # Store gap dicts for retry iterations
             
             for iteration in range(1, self.max_iterations + 1):
                 result.iterations_run = iteration
@@ -280,8 +281,9 @@ class GapResolutionWorkflow:
                             # Add unresolved gaps to context for retry iterations
                             if iteration > 1 and unresolved_gap_ids:
                                 context["retry_gap_ids"] = list(unresolved_gap_ids)
+                                context["previous_gaps"] = previous_gaps_list
                                 context["iteration"] = iteration
-                                logger.info(f"{iter_label} Retrying {len(unresolved_gap_ids)} unresolved gaps")
+                                logger.info(f"{iter_label} Retrying {len(unresolved_gap_ids)} unresolved gaps (skipping re-identification)")
                             
                             gap_result = await self.gap_resolver.execute(context)
                             
@@ -297,6 +299,14 @@ class GapResolutionWorkflow:
                         structured = gap_result.structured_data or {}
                         iter_resolved = structured.get("resolved_count", 0)
                         iter_total = structured.get("total_gaps", 0)
+                        
+                        # Store gaps list for potential retry
+                        if iteration == 1:
+                            previous_gaps_list = [
+                                {"id": r.get("gap_id"), "type": r.get("gap_type"), "description": r.get("gap_description"), 
+                                 "code_approach": r.get("resolution_approach"), "data_files_needed": []}
+                                for r in structured.get("resolutions", [])
+                            ]
                         
                         # Track all gap IDs seen across iterations
                         iter_gap_ids = {r.get("gap_id") for r in structured.get("resolutions", [])}

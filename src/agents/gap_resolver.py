@@ -291,7 +291,12 @@ class GapResolverAgent(BaseAgent):
         
         Args:
             context: Must contain 'project_folder', 'research_overview' content,
-                     and 'project_data' with file paths
+                     and 'project_data' with file paths.
+                     
+                     Optional:
+                     - 'retry_gap_ids': List of gap IDs to retry (skip identification)
+                     - 'previous_gaps': List of gap dicts from previous iteration
+                     - 'iteration': Current iteration number
             
         Returns:
             AgentResult with gap resolutions and updated findings
@@ -302,6 +307,9 @@ class GapResolverAgent(BaseAgent):
         project_folder = context.get("project_folder", "")
         research_overview = context.get("research_overview", "")
         project_data = context.get("project_data", {})
+        retry_gap_ids = context.get("retry_gap_ids", [])
+        previous_gaps = context.get("previous_gaps", [])
+        iteration = context.get("iteration", 1)
         
         if not research_overview:
             # Try to load from file
@@ -320,9 +328,16 @@ class GapResolverAgent(BaseAgent):
         data_paths = self._extract_data_paths(project_folder, project_data)
         
         try:
-            # Step 1: Identify actionable gaps
-            logger.info("Gap Resolver: Identifying actionable gaps...")
-            gaps, gap_tokens = await self._identify_gaps(research_overview, data_paths)
+            # Step 1: Identify actionable gaps (or reuse previous gaps for retry)
+            if iteration > 1 and retry_gap_ids and previous_gaps:
+                # Retry mode: filter previous gaps to only retry unresolved ones
+                logger.info(f"Gap Resolver: Retrying {len(retry_gap_ids)} gaps from iteration {iteration-1}")
+                gaps = [g for g in previous_gaps if g.get("id") in retry_gap_ids]
+                gap_tokens = 0
+            else:
+                # Normal mode: identify gaps from overview
+                logger.info("Gap Resolver: Identifying actionable gaps...")
+                gaps, gap_tokens = await self._identify_gaps(research_overview, data_paths)
             total_tokens += gap_tokens
             
             if not gaps:
@@ -429,39 +444,84 @@ Focus on gaps related to:
 4. Descriptive statistics
 5. Variable calculation verification
 
-For each actionable gap, provide:
-```json
-{{
-  "id": "C1" or "I1" etc (from the overview),
-  "type": "critical" or "important" or "enhancement",
-  "description": "brief description",
-  "code_approach": "what the code should do",
-  "data_files_needed": ["list of file paths"]
-}}
-```
+IMPORTANT: Return ONLY a valid JSON array. No markdown, no explanation, just the JSON.
 
-Return a JSON array of actionable gaps. Only include gaps where Python code can provide concrete resolution.
-If no actionable gaps exist, return an empty array: []"""
+Example response format:
+[
+  {{
+    "id": "C1",
+    "type": "critical",
+    "description": "Verify data completeness for key variables",
+    "code_approach": "Load data and check for missing values in required columns",
+    "data_files_needed": ["{data_paths.get('parquet_files', ['data/sample.parquet'])[0] if data_paths.get('parquet_files') else 'data/sample.parquet'}"]
+  }}
+]
+
+Rules:
+- Use gap IDs from the overview (C1, I1, etc.) when available
+- type must be one of: "critical", "important", "enhancement"
+- Only include gaps where Python code can provide concrete resolution
+- If no actionable gaps exist, return an empty array: []
+
+Respond with ONLY the JSON array:"""
         
         response, tokens = await self._call_claude(prompt)
         
-        # Parse JSON from response
+        # Parse JSON from response with multiple fallback strategies
         gaps = []
+        parse_method = "none"
+        
+        # Strategy 1: Direct JSON parse (response is pure JSON)
         try:
-            # Find JSON array in response
-            json_match = re.search(r'\[[\s\S]*?\]', response)
-            if json_match:
-                gaps = json.loads(json_match.group())
+            parsed = json.loads(response.strip())
+            if isinstance(parsed, list):
+                gaps = parsed
+                parse_method = "direct"
         except json.JSONDecodeError:
-            logger.warning("Could not parse gap list, attempting line-by-line")
-            # Try to extract individual gap objects
+            pass
+        
+        # Strategy 2: Extract JSON array using greedy regex
+        if not gaps:
+            try:
+                # Look for array that spans multiple lines
+                json_match = re.search(r'\[\s*\{[\s\S]*\}\s*\]', response)
+                if json_match:
+                    gaps = json.loads(json_match.group())
+                    parse_method = "regex_greedy"
+            except json.JSONDecodeError:
+                pass
+        
+        # Strategy 3: Extract from code block
+        if not gaps:
+            try:
+                if "```json" in response:
+                    json_str = response.split("```json")[1].split("```")[0].strip()
+                elif "```" in response:
+                    json_str = response.split("```")[1].split("```")[0].strip()
+                else:
+                    json_str = None
+                if json_str:
+                    gaps = json.loads(json_str)
+                    parse_method = "code_block"
+            except (json.JSONDecodeError, IndexError):
+                pass
+        
+        # Strategy 4: Line-by-line object extraction (fallback)
+        if not gaps:
+            logger.warning("Could not parse gap list as JSON array, attempting object extraction")
             for obj_match in re.finditer(r'\{[^{}]+\}', response):
                 try:
                     gap = json.loads(obj_match.group())
                     if "id" in gap and "description" in gap:
                         gaps.append(gap)
+                        parse_method = "object_extraction"
                 except (json.JSONDecodeError, KeyError):
                     continue
+        
+        if gaps:
+            logger.debug(f"Parsed {len(gaps)} gaps using method: {parse_method}")
+        else:
+            logger.warning(f"No gaps parsed from response (length={len(response)})")
         
         return gaps, tokens
     

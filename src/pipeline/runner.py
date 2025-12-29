@@ -3,6 +3,13 @@
 This runner chains the existing phase workflows into a single entrypoint.
 It is intentionally conservative and filesystem-first.
 
+Phases:
+- Phase 1: ResearchWorkflow (intake to overview)
+- Phase 2: LiteratureWorkflow (hypothesis to literature review)
+- Phase 3: GapResolutionWorkflow (resolve data gaps)
+- Phase 4: WritingReviewStage (section writing + referee review)
+- Phase 5: PaperAssembly + Compilation (assemble sections, compile PDF)
+
 Author: Gia Tenica*
 *Gia Tenica is an anagram for Agentic AI. Gia is a fully autonomous AI researcher,
 for more information see: https://giatenica.com
@@ -118,15 +125,17 @@ async def run_full_pipeline(
     *,
     enable_gap_resolution: bool = True,
     enable_writing_review: bool = True,
+    enable_paper_assembly: bool = True,
     enable_evaluation: bool = True,
     workflow_overrides: Optional[Dict[str, Any]] = None,
 ) -> WorkflowContext:
-    """Run Phase 1 -> Phase 2 -> (optional) Phase 3 -> (optional) Phase 4 -> (optional) evaluation.
+    """Run Phase 1 -> Phase 2 -> Phase 3 -> Phase 4 -> Phase 5 -> evaluation.
 
     Args:
         project_folder: Project folder path.
         enable_gap_resolution: Run the gap resolution workflow after literature.
-        enable_writing_review: Run writing + referee review stage at the end.
+        enable_writing_review: Run writing + referee review stage.
+        enable_paper_assembly: Assemble sections and compile PDF (Phase 5).
         enable_evaluation: Run post-pipeline evaluation metrics.
         workflow_overrides: Optional dict merged into the literature workflow context
             and the writing-review context. May include "evaluation" dict with keys:
@@ -225,6 +234,57 @@ async def run_full_pipeline(
         if not context.success:
             context.mark_checkpoint("end")
             return _finalize_and_return(context)
+
+    # Phase 5: Paper Assembly and Compilation (optional)
+    if enable_paper_assembly:
+        from src.paper.assembly import assemble_paper
+        from src.paper.compile import compile_paper
+        
+        logger.info("Phase 5: Paper Assembly and Compilation")
+        
+        # Step 5a: Assemble paper sections
+        assembly_result = assemble_paper(pf)
+        context.phase_results["phase_5_assembly"] = assembly_result
+        context.mark_checkpoint("phase_5_assembly_complete")
+        
+        if assembly_result.get("success"):
+            logger.info(f"Paper assembly complete: {len(assembly_result.get('section_relpaths', []))} sections")
+            
+            # Step 5b: Compile PDF
+            compile_result = compile_paper(pf)
+            context.phase_results["phase_5_compile"] = compile_result
+            context.mark_checkpoint("phase_5_compile_complete")
+            
+            if compile_result.get("success"):
+                logger.info(f"PDF generated: {compile_result.get('pdf_path')}")
+            else:
+                logger.warning("PDF compilation failed")
+                for issue in compile_result.get("issues", []):
+                    context.degradations.append(
+                        make_degradation_event(
+                            stage="paper_compile",
+                            reason_code=issue.get("kind", "compile_error"),
+                            message=issue.get("message", "Compilation error"),
+                            recommended_action="Check LaTeX logs and fix errors.",
+                            severity="warning",
+                            details=issue.get("details"),
+                            created_at=context.created_at,
+                        )
+                    )
+        else:
+            logger.warning("Paper assembly failed")
+            for issue in assembly_result.get("issues", []):
+                context.degradations.append(
+                    make_degradation_event(
+                        stage="paper_assembly",
+                        reason_code=issue.get("kind", "assembly_error"),
+                        message=issue.get("message", "Assembly error"),
+                        recommended_action="Check outputs/sections/ for generated .tex files.",
+                        severity="warning",
+                        details=issue.get("details"),
+                        created_at=context.created_at,
+                    )
+                )
 
     # Post-pipeline evaluation (optional)
     if enable_evaluation:
