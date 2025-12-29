@@ -9,6 +9,7 @@ for more information see: https://giatenica.com
 import tempfile
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from src.utils.smart_data_loader import (
@@ -112,8 +113,6 @@ class TestSmartDataLoader:
 
     def test_extract_schema_parquet_success(self):
         """Test successful schema extraction from a parquet file."""
-        import pandas as pd
-        
         loader = SmartDataLoader()
         
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -151,8 +150,6 @@ class TestSmartDataLoader:
     
     def test_extract_schema_csv_success(self):
         """Test successful schema extraction from a CSV file."""
-        import pandas as pd
-        
         loader = SmartDataLoader()
         
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -183,8 +180,6 @@ class TestSmartDataLoader:
     
     def test_extract_schema_empty_parquet_no_row_groups(self):
         """Test edge case: empty parquet file with no row groups."""
-        import pandas as pd
-        
         loader = SmartDataLoader()
         
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -214,8 +209,6 @@ class TestSmartDataLoader:
 
     def test_load_safe_parquet_success(self):
         """Test successful data loading from parquet file."""
-        import pandas as pd
-        
         loader = SmartDataLoader()
         
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -238,8 +231,6 @@ class TestSmartDataLoader:
 
     def test_load_safe_csv_with_column_selection(self):
         """Test successful data loading from CSV with column selection."""
-        import pandas as pd
-        
         loader = SmartDataLoader()
         
         with tempfile.TemporaryDirectory() as tmpdir:
