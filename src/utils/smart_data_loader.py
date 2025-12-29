@@ -283,10 +283,6 @@ class SmartDataLoader:
             # Calculate sampling strategy
             # Read evenly spaced row groups to get diverse sample
             num_row_groups = parquet_file.metadata.num_row_groups
-            rows_per_group = [
-                parquet_file.metadata.row_group(i).num_rows
-                for i in range(num_row_groups)
-            ]
             
             # Determine which row groups to read for approximate sample size
             # Strategy: read row groups evenly spaced throughout the file
