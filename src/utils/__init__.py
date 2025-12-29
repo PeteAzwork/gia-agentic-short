@@ -84,6 +84,17 @@ from .style_validation import (
     validate_style,
 )
 
+# Smart data loading utilities
+from .smart_data_loader import (
+    SmartDataLoader,
+    DataFrameSchema,
+    ColumnSchema,
+    extract_all_schemas,
+    schemas_to_prompt,
+    save_schemas_json,
+    load_schemas_json,
+)
+
 __all__ = [
     # Validation
     "validate_path",
@@ -142,4 +153,12 @@ __all__ = [
     "check_banned_words",
     "count_words_by_section",
     "validate_style",
+    # Smart data loading
+    "SmartDataLoader",
+    "DataFrameSchema",
+    "ColumnSchema",
+    "extract_all_schemas",
+    "schemas_to_prompt",
+    "save_schemas_json",
+    "load_schemas_json",
 ]

@@ -231,11 +231,26 @@ async def run_full_pipeline(
         context.record_phase_result("phase_4_writing_review", writing_result.to_payload())
         context.mark_checkpoint("phase_4_complete")
 
+        # Graceful degradation: Phase 4 failure should not block Phase 5
+        # Paper assembly can still work with whatever sections were generated
         if not context.success:
-            context.mark_checkpoint("end")
-            return _finalize_and_return(context)
+            logger.warning(
+                "Phase 4 (Writing Review) did not complete successfully; "
+                "Phase 5 will attempt assembly with available sections"
+            )
+            context.degradations.append(
+                make_degradation_event(
+                    stage="writing_review",
+                    reason_code="phase_4_incomplete",
+                    message="Writing review stage did not complete successfully",
+                    recommended_action="Review section outputs and logs; some sections may be missing.",
+                    severity="warning",
+                    details={"phase_4_result": writing_result.to_payload() if writing_result else None},
+                    created_at=context.created_at,
+                )
+            )
 
-    # Phase 5: Paper Assembly and Compilation (optional)
+    # Phase 5: Paper Assembly and Compilation (optional, runs even if Phase 4 had issues)
     if enable_paper_assembly:
         from src.paper.assembly import assemble_paper
         from src.paper.compile import compile_paper
