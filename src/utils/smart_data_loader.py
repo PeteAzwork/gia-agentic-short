@@ -186,15 +186,22 @@ class SmartDataLoader:
                 memory_mb = p.stat().st_size / (1024 * 1024)
                 
             else:
-                # For CSV, read head and count lines
+                # For CSV, read head and then count rows using a CSV parser
                 df_head = pd.read_csv(path, nrows=1000)
                 
-                # Estimate row count
-                with open(path, "rb") as f:
-                    chunk = f.read(1024 * 1024)  # 1MB
-                    newlines_per_mb = chunk.count(b"\n")
-                    file_size = p.stat().st_size
-                    rows = max(1, int(newlines_per_mb * file_size / (1024 * 1024)))
+                # Count rows using pandas chunked reading to handle quoted newlines correctly
+                rows = 0
+                try:
+                    for chunk in pd.read_csv(path, chunksize=100_000):
+                        rows += len(chunk)
+                except Exception as count_err:
+                    logger.warning(
+                        "Failed to count all CSV rows accurately for {path}: {err}. "
+                        "Using head row count as a fallback.",
+                        path=path,
+                        err=count_err,
+                    )
+                    rows = max(1, int(len(df_head)))
                 
                 columns = len(df_head.columns)
                 
