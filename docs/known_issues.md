@@ -127,34 +127,40 @@ Edison's `arun_tasks_until_done` returns a **LIST** of `PQATaskResponse` objects
 
 ## Workflow Statistics
 
-Last run (2025-12-28 23:31 - 23:49):
+Last successful run (2025-12-29 00:11 - 01:03):
+- **Research Workflow:** 554.85s, 52,124 tokens, 0 errors
+  - DataAnalyst: 32.92s, 3,286 tokens
+  - ResearchExplorer: 111.63s, 7,805 tokens  
+  - GapAnalyst: 125.53s, 14,363 tokens
+  - OverviewGenerator: 262.67s, 26,670 tokens
+  - Consistency Check: 25 issues (8 critical)
+  - Readiness: 9.2% complete
+- **Literature Workflow:** 707.6s, 103,956 tokens, success=True
+  - HypothesisDeveloper: 121.16s, 5,134 tokens (parsing FIXED)
+  - LiteratureSearch: 95.5s, 5 citations via Claude/OpenAlex
+  - LiteratureSynthesizer: 105.41s, 10,015 tokens (success=True)
+  - PaperStructurer: 225.44s, 22,992 tokens
+  - ProjectPlanner: 149.41s, 30,650 tokens
+  - Consistency Check: 25 issues (8 critical)
+  - Readiness: 0% complete (expected at this stage)
+- **Gap Resolution Workflow:** 1,852.06s, 1,195,290 tokens, 8/12 gaps resolved
+  - GapResolver: 162.06s synthesis, 74,174 tokens
+  - OverviewUpdater: 449.27s, 101,759 tokens
+  - 12 gaps identified, 8 successfully resolved
+  - 1 gap timeout (DESC1: 120s limit)
+  - Consistency Check: 37 issues (17 critical)
+- **Total time:** ~52 minutes
+- **Total tokens:** ~1,351,370
+- **Final status:** Completed (Success=False due to remaining gaps)
+
+Previous run with #7/#8 bugs (2025-12-28 23:31 - 23:49):
 - **Research Workflow:** 482.49s, 49,495 tokens, 0 errors
-  - DataAnalyst: 36.26s, 3,632 tokens
-  - ResearchExplorer: 104.80s, 8,374 tokens  
-  - GapAnalyst: 109.85s, 13,840 tokens
-  - OverviewGenerator: 208.76s, 23,649 tokens
-  - Consistency Check: 19 issues (10 critical)
-  - Readiness: 1.5% complete
 - **Literature Workflow:** 581.4s, 59,756 tokens, success=False
-  - HypothesisDeveloper: 96.50s, 4,483 tokens (parsing failed)
-  - LiteratureSearch: skipped (no hypothesis)
-  - LiteratureSynthesis: 91.22s, 8,861 tokens (error)
-  - PaperStructurer: 228.14s, 23,478 tokens
-  - ProjectPlanner: 156.71s, 31,795 tokens
-  - Consistency Check: 41 issues (22 critical)
-  - Readiness: 8.2% complete
+  - HypothesisDeveloper parsing failed (Issue #7)
+  - LiteratureSynthesis NoneType error (Issue #8)
 - **Gap Resolution Workflow:** Not executed (Literature failed)
 - **Total time:** ~18 minutes
-- **Total tokens:** ~109,251
-- **Final status:** Failed (Literature workflow errors #7, #8)
-
-Previous successful run (2025-12-28):
-- **Research Workflow:** 453.57s, 44,296 tokens, 0 errors
-- **Literature Workflow:** 640.1s, 80,070 tokens, success=True (with fallbacks)
-- **Gap Resolution Workflow:** 1,482.93s, 1,047,409 tokens, 9/12 gaps resolved
-- **Total time:** ~43 minutes
-- **Total tokens:** ~1,171,775
-- **Final status:** Crashed on JSON serialization (all workflows completed)
+- **Final status:** Failed (Issues #7 and #8 now fixed)
 
 ---
 
