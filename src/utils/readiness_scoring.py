@@ -529,9 +529,6 @@ def check_data_readiness(project_folder: str) -> Dict[str, Any]:
         # Prune directories to avoid traversing them
         dirs[:] = [d for d in dirs if d not in exclude_dirs and not d.startswith('.')]
 
-        if accepted >= max_files:
-            break
-
         for filename in files:
             if filename.startswith('.'):
                 continue
@@ -554,6 +551,10 @@ def check_data_readiness(project_folder: str) -> Dict[str, Any]:
                     "size_bytes": size,
                 }
             )
+        
+        # Break outer loop if we've reached the limit
+        if accepted >= max_files:
+            break
 
     result["total_files"] = len(result["data_files"])
     result["total_size_mb"] = total_size / (1024 * 1024)
