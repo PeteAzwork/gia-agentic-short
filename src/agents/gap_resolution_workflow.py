@@ -327,9 +327,14 @@ class GapResolutionWorkflow:
                         if len(all_gap_ids_seen) > self.max_total_gaps:
                             logger.warning(
                                 f"{iter_label} Gap explosion detected: {len(all_gap_ids_seen)} total gaps "
-                                f"exceeds MAX_TOTAL_GAPS={self.max_total_gaps}. Capping."
+                                f"exceeds MAX_TOTAL_GAPS={self.max_total_gaps}. Capping and terminating iterations."
                             )
                             span.set_attribute("gap_explosion_capped", True)
+                            result.errors.append(
+                                f"Gap explosion: {len(all_gap_ids_seen)} gaps exceeds cap of {self.max_total_gaps}"
+                            )
+                            # Break out of the iteration loop to prevent runaway gap growth
+                            break
                         
                         # Update result totals (always use actual totals for logging)
                         result.gaps_resolved = iter_resolved
