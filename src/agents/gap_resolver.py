@@ -76,8 +76,76 @@ class GapResolution:
         }
 
 
+# Defensive coding rules for LLM-generated pandas code
+DEFENSIVE_PANDAS_RULES = """
+DEFENSIVE PANDAS CODING REQUIREMENTS (MANDATORY):
+================================================
+All generated code MUST follow these defensive patterns to handle edge cases:
+
+1. EMPTY DATAFRAME CHECK (required before any operation):
+   if df.empty:
+       print("WARNING: DataFrame is empty, skipping analysis")
+       # Return early or handle gracefully
+
+2. COLUMN EXISTENCE CHECK (required before column access):
+   required_cols = ['col1', 'col2', 'col3']
+   missing = [c for c in required_cols if c not in df.columns]
+   if missing:
+       print(f"ERROR: Missing columns: {missing}")
+       print(f"Available columns: {list(df.columns)}")
+       # Return early or handle gracefully
+
+3. NULL-AWARE OPERATIONS:
+   # Always use dropna() before operations that fail on NaN
+   valid_data = df[column].dropna()
+   if len(valid_data) == 0:
+       print(f"WARNING: No valid (non-null) data in {column}")
+   else:
+       result = valid_data.describe()
+
+4. SAFE QUANTILE CUTS (qcut can fail with duplicate edges):
+   # Prefer the shared helper SmartDataLoader.qcut_safe, which returns
+   # (bins, warning_message) instead of printing inside the helper.
+   bins, warning = SmartDataLoader.qcut_safe(
+       series.dropna(),
+       q=4,
+       labels=['Q1','Q2','Q3','Q4'],
+   )
+   if warning:
+       print(warning)
+
+   # If you cannot use SmartDataLoader.qcut_safe, fall back to this pattern:
+   try:
+       bins = pd.qcut(series.dropna(), q=4, labels=['Q1','Q2','Q3','Q4'], duplicates='drop')
+   except ValueError as e:
+       error_msg = f"WARNING: qcut failed ({e}), using cut() with fixed bins"
+       print(error_msg)
+       bins = pd.cut(series.dropna(), bins=4, labels=['Q1','Q2','Q3','Q4'])
+
+5. LARGE DATASET SAMPLING (for datasets > 1M rows):
+   MAX_ROWS = 500_000
+   if len(df) > MAX_ROWS:
+       print(f"Sampling {MAX_ROWS:,} from {len(df):,} rows")
+       df = df.sample(n=MAX_ROWS, random_state=42)
+
+6. DESCRIBE SAFEGUARD:
+   numeric_df = df.select_dtypes(include=['number'])
+   if numeric_df.empty:
+       print("WARNING: No numeric columns to describe")
+   else:
+       print(numeric_df.describe())
+
+7. ERROR CONTEXT IN EXCEPTIONS:
+   try:
+       # operation
+   except Exception as e:
+       print(f"ERROR in [operation_name]: {type(e).__name__}: {e}")
+       print(f"DataFrame shape: {df.shape if 'df' in dir() else 'N/A'}")
+       print(f"Columns: {list(df.columns) if 'df' in dir() and hasattr(df, 'columns') else 'N/A'}")
+"""
+
 # System prompt for gap parsing and code generation
-GAP_RESOLVER_SYSTEM_PROMPT = """You are a research gap resolver agent that analyzes research overviews and generates Python code to address data-related gaps.
+GAP_RESOLVER_SYSTEM_PROMPT = f"""You are a research gap resolver agent that analyzes research overviews and generates Python code to address data-related gaps.
 
 Your role is to:
 1. Parse the RESEARCH_OVERVIEW.md to identify actionable gaps
@@ -104,6 +172,7 @@ CODE GENERATION RULES:
 - Use absolute file paths provided in context
 - Import all required libraries at the top
 - Limit output to essential information (avoid printing entire dataframes)
+{DEFENSIVE_PANDAS_RULES}
 
 OUTPUT FORMAT:
 When generating code, wrap it in triple backticks with python:
@@ -423,6 +492,46 @@ class GapResolverAgent(BaseAgent):
         
         return data_paths
     
+    def _get_schema_info(self, data_paths: dict) -> str:
+        """
+        Extract schema information from data files for prompt injection.
+        
+        Returns formatted string with column names, types, and sample values.
+        """
+        try:
+            from src.utils.smart_data_loader import SmartDataLoader, schemas_to_prompt
+            
+            loader = SmartDataLoader()
+            schemas = {}
+            
+            # Extract schemas from parquet files
+            for path in data_paths.get("parquet_files", []):
+                try:
+                    name = Path(path).stem
+                    schemas[name] = loader.extract_schema(path)
+                except Exception as e:
+                    logger.debug(f"Failed to extract schema from {path}: {e}")
+            
+            # Extract schemas from CSV files (limit to first few)
+            for path in data_paths.get("csv_files", [])[:3]:
+                try:
+                    name = Path(path).stem
+                    schemas[name] = loader.extract_schema(path)
+                except Exception as e:
+                    logger.debug(f"Failed to extract schema from {path}: {e}")
+            
+            if schemas:
+                return schemas_to_prompt(schemas)
+            else:
+                return "DATA SCHEMAS: Unable to extract schema information."
+                
+        except ImportError:
+            logger.debug("SmartDataLoader not available, skipping schema extraction")
+            return "DATA SCHEMAS: Schema extraction not available."
+        except Exception as e:
+            logger.debug(f"Schema extraction failed: {e}")
+            return f"DATA SCHEMAS: Extraction failed ({type(e).__name__})"
+    
     async def _identify_gaps(self, overview: str, data_paths: dict) -> Tuple[List[dict], int]:
         """
         Parse overview and identify gaps that require code execution.
@@ -545,6 +654,9 @@ Respond with ONLY the JSON array:"""
             resolution_approach=gap.get("code_approach", ""),
         )
         
+        # Extract schema information for data files
+        schema_info = self._get_schema_info(data_paths)
+        
         base_code_prompt = f"""Generate Python code to address this research gap:
 
 GAP ID: {gap.get('id')}
@@ -553,6 +665,8 @@ APPROACH: {gap.get('code_approach')}
 
 AVAILABLE DATA FILES:
 {json.dumps(data_paths, indent=2)}
+
+{schema_info}
 
 REQUIREMENTS:
 1. Use pandas for data manipulation
@@ -564,6 +678,14 @@ REQUIREMENTS:
 7. If checking for symbol/ticker distinction, print unique values
 8. If validating data, print sample sizes, date ranges, missing value counts
 9. Keep output focused and informative
+
+MANDATORY DEFENSIVE PATTERNS:
+- Check if DataFrame is empty before any operation: if df.empty: print("WARNING: DataFrame empty")
+- Verify columns exist before access: if 'col' not in df.columns: print(f"Missing column")
+- Use dropna() before operations that fail on NaN
+- For large datasets (>1M rows), sample first: df.sample(n=500000, random_state=42)
+- Wrap pd.qcut() in try/except with pd.cut() fallback
+- Use select_dtypes(include=['number']) before describe()
 
 Return ONLY the complete Python code wrapped in a single ```python fenced block. Do not include any prose outside the code block."""
 
