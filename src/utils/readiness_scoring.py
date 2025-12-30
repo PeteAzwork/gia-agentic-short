@@ -540,7 +540,7 @@ def check_data_readiness(project_folder: str) -> Dict[str, Any]:
                 continue
 
             accepted += 1
-            if accepted >= max_files:
+            if accepted > max_files:
                 break
 
             total_size += size
@@ -553,7 +553,7 @@ def check_data_readiness(project_folder: str) -> Dict[str, Any]:
             )
         
         # Break outer loop if we've reached the limit
-        if accepted >= max_files:
+        if accepted > max_files:
             break
 
     result["total_files"] = len(result["data_files"])
