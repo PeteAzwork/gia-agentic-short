@@ -111,7 +111,8 @@ class DataAnalystAgent(BaseAgent):
                 if filename.startswith('.'):
                     continue
 
-                if visited_files >= max_files:
+                visited_files += 1
+                if visited_files > max_files:
                     limit_reached = True
                     break
 
@@ -126,7 +127,6 @@ class DataAnalystAgent(BaseAgent):
                         "rows": file_analysis.get("rows"),
                         "columns": file_analysis.get("columns"),
                     })
-                visited_files += 1
 
             if limit_reached:
                 break
