@@ -1,0 +1,372 @@
+<mxfile host="app.diagrams.net" modified="2026-01-03T00:00:00.000Z" agent="Claude" version="21.0.0" type="device">
+  <diagram id="gia-architecture" name="GIA Pipeline Architecture">
+    <mxGraphModel dx="1434" dy="780" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="GIA Agentic Research Pipeline - System Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=24;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="600" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== UNIFIED PIPELINE RUNNER ==================== -->
+        <mxCell id="pipeline-runner-box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="1320" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="pipeline-runner-label" value="UNIFIED PIPELINE RUNNER (src/pipeline/runner.py)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="480" y="85" width="400" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Phase 1 -->
+        <mxCell id="phase1" value="&lt;b&gt;Phase 1&lt;/b&gt;&lt;br&gt;Intake &amp; Analysis&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;A01-A04&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="60" y="120" width="140" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Phase 2 -->
+        <mxCell id="phase2" value="&lt;b&gt;Phase 2&lt;/b&gt;&lt;br&gt;Literature &amp; Planning&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;A05-A09&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="260" y="120" width="140" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Phase 3 -->
+        <mxCell id="phase3" value="&lt;b&gt;Phase 3&lt;/b&gt;&lt;br&gt;Gap Resolution&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;A10-A11&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="460" y="120" width="140" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Phase 4 -->
+        <mxCell id="phase4" value="&lt;b&gt;Phase 4&lt;/b&gt;&lt;br&gt;Writing &amp; Review&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;A16-A25&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="660" y="120" width="140" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Quality Agents -->
+        <mxCell id="quality" value="&lt;b&gt;Quality Agents&lt;/b&gt;&lt;br&gt;A12-A15&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;Review, Style, Consistency&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="860" y="120" width="160" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Workflow Cache -->
+        <mxCell id="cache" value="&lt;b&gt;Workflow Cache&lt;/b&gt;&lt;br&gt;.workflow_cache/*.json" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="110" width="130" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows between phases -->
+        <mxCell id="arrow1-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666666;" edge="1" parent="1" source="phase1" target="phase2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow2-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666666;" edge="1" parent="1" source="phase2" target="phase3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow3-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666666;" edge="1" parent="1" source="phase3" target="phase4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== AGENT ORCHESTRATOR ==================== -->
+        <mxCell id="orchestrator-box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="240" width="1320" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="orchestrator-label" value="AGENT ORCHESTRATOR (src/agents/orchestrator.py)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="480" y="245" width="400" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Execution Modes -->
+        <mxCell id="exec-modes" value="&lt;b&gt;Execution Modes&lt;/b&gt;&lt;br&gt;• SINGLE_PASS&lt;br&gt;• WITH_REVIEW&lt;br&gt;• ITERATIVE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="280" width="140" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Inter-Agent Protocol -->
+        <mxCell id="protocol" value="&lt;b&gt;Inter-Agent Protocol&lt;/b&gt;&lt;br&gt;• Request/Response&lt;br&gt;• Permission Enforcement&lt;br&gt;• Call Depth Limiting" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="220" y="280" width="160" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Revision Loop -->
+        <mxCell id="revision" value="&lt;b&gt;Revision Loop&lt;/b&gt;&lt;br&gt;• Self-Critique&lt;br&gt;• Critical Review&lt;br&gt;• Convergence Check" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="400" y="280" width="150" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Deliberation -->
+        <mxCell id="deliberation" value="&lt;b&gt;Deliberation&lt;/b&gt;&lt;br&gt;• Multi-Agent Consensus&lt;br&gt;• Conflict Resolution&lt;br&gt;• Perspective Merge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="570" y="280" width="160" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Agent Registry -->
+        <mxCell id="registry" value="&lt;b&gt;Agent Registry&lt;/b&gt;&lt;br&gt;(src/agents/registry.py)&lt;br&gt;&lt;br&gt;25 Agents (A01-A25)&lt;br&gt;Capabilities &amp; Permissions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=center;" vertex="1" parent="1">
+          <mxGeometry x="760" y="280" width="170" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- BaseAgent -->
+        <mxCell id="baseagent" value="&lt;b&gt;BaseAgent&lt;/b&gt;&lt;br&gt;(src/agents/base.py)&lt;br&gt;&lt;br&gt;execute() | revise()&lt;br&gt;self_critique()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=center;" vertex="1" parent="1">
+          <mxGeometry x="960" y="280" width="150" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Feedback -->
+        <mxCell id="feedback" value="&lt;b&gt;Feedback&lt;/b&gt;&lt;br&gt;QualityScore&lt;br&gt;Convergence" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="280" width="100" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== LLM LAYER ==================== -->
+        <mxCell id="llm-box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="420" width="1320" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="llm-label" value="LLM LAYER (src/llm/claude_client.py)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="530" y="425" width="300" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Claude Opus -->
+        <mxCell id="opus" value="&lt;b&gt;Claude Opus 4.5&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;Complex Reasoning&lt;br&gt;Scientific Analysis&lt;br&gt;Academic Writing&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6366f1;strokeColor=#4338ca;fontColor=#ffffff;align=center;" vertex="1" parent="1">
+          <mxGeometry x="120" y="455" width="160" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- Claude Sonnet -->
+        <mxCell id="sonnet" value="&lt;b&gt;Claude Sonnet 4.5&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;Coding | Agents&lt;br&gt;Data Analysis | Default&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8b5cf6;strokeColor=#6d28d9;fontColor=#ffffff;align=center;" vertex="1" parent="1">
+          <mxGeometry x="340" y="455" width="160" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- Claude Haiku -->
+        <mxCell id="haiku" value="&lt;b&gt;Claude Haiku 4.5&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;Classification&lt;br&gt;Summarization | Extraction&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a78bfa;strokeColor=#7c3aed;fontColor=#ffffff;align=center;" vertex="1" parent="1">
+          <mxGeometry x="560" y="455" width="160" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- Task-Based Selection -->
+        <mxCell id="task-select" value="&lt;b&gt;Task-Based Model Selection&lt;/b&gt;&lt;br&gt;TaskType → ModelTier mapping" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d4c4fb;strokeColor=#9673a6;align=center;" vertex="1" parent="1">
+          <mxGeometry x="780" y="455" width="200" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- Prompt Caching -->
+        <mxCell id="caching" value="&lt;b&gt;Prompt Caching&lt;/b&gt;&lt;br&gt;TTL: ephemeral (5 min)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d4c4fb;strokeColor=#9673a6;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="455" width="150" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- External APIs -->
+        <mxCell id="external" value="&lt;b&gt;External&lt;/b&gt;&lt;br&gt;Edison API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d4c4fb;strokeColor=#9673a6;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="455" width="100" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== GATE SYSTEM ==================== -->
+        <mxCell id="gates-box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="540" width="600" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="gates-label" value="GATE SYSTEM" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="270" y="545" width="140" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Citation Gate -->
+        <mxCell id="citation-gate" value="&lt;b&gt;Citation Gate&lt;/b&gt;&lt;br&gt;citations/gates.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcc00;strokeColor=#d6b656;align=center;" vertex="1" parent="1">
+          <mxGeometry x="60" y="580" width="110" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Literature Gate -->
+        <mxCell id="lit-gate" value="&lt;b&gt;Literature Gate&lt;/b&gt;&lt;br&gt;literature/gates.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcc00;strokeColor=#d6b656;align=center;" vertex="1" parent="1">
+          <mxGeometry x="180" y="580" width="110" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Evidence Gate -->
+        <mxCell id="evidence-gate" value="&lt;b&gt;Evidence Gate&lt;/b&gt;&lt;br&gt;evidence/gates.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcc00;strokeColor=#d6b656;align=center;" vertex="1" parent="1">
+          <mxGeometry x="300" y="580" width="110" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Computation Gate -->
+        <mxCell id="comp-gate" value="&lt;b&gt;Computation&lt;/b&gt;&lt;br&gt;claims/gates.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcc00;strokeColor=#d6b656;align=center;" vertex="1" parent="1">
+          <mxGeometry x="420" y="580" width="100" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Analysis Gate -->
+        <mxCell id="analysis-gate" value="&lt;b&gt;Analysis&lt;/b&gt;&lt;br&gt;analysis/gates.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcc00;strokeColor=#d6b656;align=center;" vertex="1" parent="1">
+          <mxGeometry x="530" y="580" width="100" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Gate Actions -->
+        <mxCell id="gate-pass" value="PASS" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="640" width="60" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="gate-downgrade" value="DOWNGRADE" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="130" y="640" width="80" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="gate-block" value="BLOCK" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="220" y="640" width="60" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== STORAGE LAYER ==================== -->
+        <mxCell id="storage-box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="660" y="540" width="700" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="storage-label" value="STORAGE LAYER (Filesystem-First)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="900" y="545" width="260" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Evidence Store -->
+        <mxCell id="ev-store" value="&lt;b&gt;Evidence Store&lt;/b&gt;&lt;br&gt;.evidence/evidence.jsonl&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;Append-only JSONL&lt;/font&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#b3d9ff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="680" y="580" width="130" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Citation Registry -->
+        <mxCell id="cit-reg" value="&lt;b&gt;Citation Registry&lt;/b&gt;&lt;br&gt;bibliography/citations.json&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;+ references.bib&lt;/font&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#b3d9ff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="830" y="580" width="140" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Claims Store -->
+        <mxCell id="claims-store" value="&lt;b&gt;Claims Store&lt;/b&gt;&lt;br&gt;claims/claims.json&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;Evidence-linked&lt;/font&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#b3d9ff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="990" y="580" width="120" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Outputs -->
+        <mxCell id="outputs" value="&lt;b&gt;Outputs&lt;/b&gt;&lt;br&gt;outputs/*.md&lt;br&gt;outputs/*.json&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;Markdown + JSON&lt;/font&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#b3d9ff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="580" width="110" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Paper -->
+        <mxCell id="paper" value="&lt;b&gt;Paper&lt;/b&gt;&lt;br&gt;paper/*.tex&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;LaTeX sections&lt;/font&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#b3d9ff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="580" width="90" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== OBSERVABILITY ==================== -->
+        <mxCell id="obs-box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="700" width="400" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="obs-label" value="OBSERVABILITY" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="180" y="705" width="120" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Tracing -->
+        <mxCell id="tracing" value="&lt;b&gt;OpenTelemetry&lt;/b&gt;&lt;br&gt;Distributed Tracing&lt;br&gt;OTLP Exporter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;align=center;" vertex="1" parent="1">
+          <mxGeometry x="60" y="740" width="120" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Logging -->
+        <mxCell id="logging" value="&lt;b&gt;Loguru&lt;/b&gt;&lt;br&gt;Structured Logging&lt;br&gt;workflow_*.log" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;align=center;" vertex="1" parent="1">
+          <mxGeometry x="200" y="740" width="110" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Degradation -->
+        <mxCell id="degrad" value="&lt;b&gt;Degradation&lt;/b&gt;&lt;br&gt;Events Summary&lt;br&gt;degradation_summary.json" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;align=center;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="320" y="740" width="110" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== SCHEMAS ==================== -->
+        <mxCell id="schema-box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="460" y="700" width="450" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="schema-label" value="JSON SCHEMAS (src/schemas/)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="580" y="705" width="220" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Schema items -->
+        <mxCell id="schema1" value="evidence_item" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffd699;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="475" y="740" width="90" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="schema2" value="citation_record" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffd699;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="575" y="740" width="90" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="schema3" value="claim_record" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffd699;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="675" y="740" width="80" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="schema4" value="metric_record" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffd699;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="765" y="740" width="80" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="schema5" value="agent_message" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffd699;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="475" y="770" width="90" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="schema6" value="degradation_event" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffd699;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="575" y="770" width="100" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="schema7" value="task_decomposition" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffd699;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="685" y="770" width="110" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== CONFIGURATION ==================== -->
+        <mxCell id="config-box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="930" y="700" width="430" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="config-label" value="CONFIGURATION (src/config.py)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="705" width="220" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Config items -->
+        <mxCell id="config1" value="&lt;b&gt;Timeouts&lt;/b&gt;&lt;br&gt;LLM: 600s&lt;br&gt;Code: 120s" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b8e0b8;strokeColor=#82b366;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="950" y="735" width="80" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="config2" value="&lt;b&gt;Intake&lt;/b&gt;&lt;br&gt;Port: 8080&lt;br&gt;Max: 2GB" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b8e0b8;strokeColor=#82b366;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="735" width="80" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="config3" value="&lt;b&gt;Gap Resolution&lt;/b&gt;&lt;br&gt;Max Iter: 3&lt;br&gt;Lenient: true" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b8e0b8;strokeColor=#82b366;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="735" width="90" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="config4" value="&lt;b&gt;Literature&lt;/b&gt;&lt;br&gt;Max Papers: 50&lt;br&gt;Min Relevance: 5.0" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b8e0b8;strokeColor=#82b366;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1230" y="735" width="110" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== DATA FLOW ARROWS ==================== -->
+        <!-- Project Input -->
+        <mxCell id="input-arrow" value="" style="shape=flexArrow;endArrow=classic;html=1;rounded=0;fillColor=#dae8fc;strokeColor=#6c8ebf;width=20;endSize=6;startSize=6;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="130" y="80" as="sourcePoint" />
+            <mxPoint x="130" y="115" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="input-label" value="project.json&lt;br&gt;+ data/*" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="50" width="70" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Output Arrow -->
+        <mxCell id="output-arrow" value="" style="shape=flexArrow;endArrow=classic;html=1;rounded=0;fillColor=#d5e8d4;strokeColor=#82b366;width=20;endSize=6;startSize=6;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="1270" y="115" as="sourcePoint" />
+            <mxPoint x="1270" y="80" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="output-label" value="paper/*.tex&lt;br&gt;+ paper.pdf" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1230" y="50" width="80" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend-box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="820" width="400" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-title" value="&lt;b&gt;LEGEND&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="50" y="825" width="60" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="legend1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="50" y="850" width="20" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="legend1-text" value="Phases" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="75" y="850" width="50" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="legend2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="130" y="850" width="20" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="legend2-text" value="Orchestration" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="155" y="850" width="70" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="legend3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="230" y="850" width="20" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="legend3-text" value="LLM Layer" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="255" y="850" width="60" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="legend4" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="320" y="850" width="20" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="legend4-text" value="Storage" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="345" y="850" width="50" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="legend5" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="50" y="870" width="20" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="legend5-text" value="Execution Modes" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="75" y="870" width="90" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="legend6" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="170" y="870" width="20" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="legend6-text" value="Agent Components" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="195" y="870" width="100" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="legend7" value="" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=5;fillColor=#b3d9ff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="300" y="865" width="20" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="legend7-text" value="Data Stores" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="325" y="870" width="70" height="15" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
